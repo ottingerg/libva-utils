@@ -22,9 +22,6 @@
 
 #define MAX_XY_RESOLUTION 16364
 
-#define TRUE 1
-#define FALSE 0
-
 #ifndef N_ELEMENTS
 #define N_ELEMENTS(array) (sizeof(array)/sizeof(array[0]))
 #endif
@@ -40,12 +37,8 @@
 #define KEY_FRAME               0
 #define INTER_FRAME             1
 
-#define NUM_INPUT_SURFACES 1
-#define NUM_REF_SURFACES 4
-#define NUM_SURFACES (NUM_REF_SURFACES+NUM_INPUT_SURFACES)
-#define SID_INPUT_PICTURE NUM_REF_SURFACES
-
-#define NUM_BUFFERS 10
+#define NUM_SURFACES            4
+#define NUM_BUFFERS             10
 
 static const struct option long_opts[] = {
     {"help", no_argument, NULL, 0 },
@@ -93,9 +86,7 @@ struct vp8enc_settings {
 
 static struct vp8enc_settings settings =
   {
-//HACK-Warning - everything hardcoded at the moment TODO: add command line options
-    .width = 352,
-    .height = 288,
+    //Default Values - unless otherwise specified with command line options
     .frame_rate = 30,
     .loop_filter_level = 19,
     .clamp_qindex_low = 9,
@@ -120,6 +111,7 @@ static struct vp8enc_settings settings =
      VAEncPictureParameterBufferVP8 pic_param;
      VAQMatrixBufferVP8 q_matrix;
      VASurfaceID surfaces[NUM_SURFACES];
+     VASurfaceID recon_surface, last_ref_surface, golden_ref_surface, alt_ref_surface;
      VABufferID codedbuf_buf_id;
      VABufferID va_buffers[NUM_BUFFERS];
      int num_va_buffers;
@@ -370,8 +362,88 @@ void vp8enc_init_PictureParameterBuffer(VAEncPictureParameterBufferVP8 *picParam
 
 void vp8enc_update_picture_parameter(int frame_type)
 {
-  vaapi_context.pic_param.reconstructed_frame = vaapi_context.surfaces[SID_INPUT_PICTURE]; //HACK-Warning surfaces
-  vaapi_context.pic_param.ref_flags.bits.force_kf = 1;
+  vaapi_context.pic_param.reconstructed_frame = vaapi_context.recon_surface;
+  vaapi_context.pic_param.ref_last_frame = VA_INVALID_SURFACE;
+  vaapi_context.pic_param.ref_gf_frame = VA_INVALID_SURFACE;
+  vaapi_context.pic_param.ref_arf_frame = VA_INVALID_SURFACE;
+
+  if (frame_type == KEY_FRAME)
+  {
+    vaapi_context.pic_param.ref_flags.bits.force_kf = 1;
+    vaapi_context.pic_param.pic_flags.bits.frame_type = KEY_FRAME;
+  } else { // INTER_FRAME
+    vaapi_context.pic_param.ref_flags.bits.force_kf = 0;
+    vaapi_context.pic_param.pic_flags.bits.frame_type = INTER_FRAME;
+    if(!vaapi_context.pic_param.ref_flags.bits.no_ref_last)
+      vaapi_context.pic_param.ref_last_frame = vaapi_context.last_ref_surface;
+    if(!vaapi_context.pic_param.ref_flags.bits.no_ref_gf)
+      vaapi_context.pic_param.ref_gf_frame = vaapi_context.golden_ref_surface;
+    if(!vaapi_context.pic_param.ref_flags.bits.no_ref_arf)
+      vaapi_context.pic_param.ref_arf_frame = vaapi_context.alt_ref_surface;
+  }
+
+  //Hack-Warning - Update Pattern fixed (not suitable for SVC)
+  vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
+  vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame = 0;
+  vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_golden = 1;
+  vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame = 0;
+  vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_alternate = 2;
+}
+
+VASurfaceID vp8enc_get_unused_surface()
+{
+  VASurfaceID current_surface;
+
+  for (size_t i = 0; i < N_ELEMENTS(vaapi_context.surfaces); i++) {
+        current_surface = vaapi_context.surfaces[i];
+
+        if(current_surface != vaapi_context.last_ref_surface && current_surface != vaapi_context.golden_ref_surface && current_surface != vaapi_context.alt_ref_surface)
+          return current_surface;
+  }
+
+  //No unused surface found - should never happen.
+  fprintf(stderr, "No unused surface found!\n");
+  assert(0);
+
+}
+
+VASurfaceID vp8enc_update_reference(VASurfaceID current_surface, VASurfaceID second_copy_surface, bool refresh_with_recon, int copy_flag)
+{
+  if(refresh_with_recon)
+    return vaapi_context.recon_surface;
+  switch(copy_flag)
+  {
+    case 0:
+      return current_surface;
+    case 1:
+      return vaapi_context.last_ref_surface;
+    case 2:
+      return second_copy_surface;
+    default: // should never happen
+      fprintf(stderr, "Invalid copy_buffer_to_X flag\n");
+      assert(0);
+  }
+
+  return VA_INVALID_ID; // should never happen
+}
+
+
+void vp8enc_update_reference_list(int frame_type)
+{
+  if (frame_type == KEY_FRAME)
+  {
+     vaapi_context.last_ref_surface = vaapi_context.recon_surface;
+     vaapi_context.golden_ref_surface = vaapi_context.recon_surface;
+     vaapi_context.alt_ref_surface = vaapi_context.recon_surface;
+  } else { // INTER_FRAME
+    //HACK-Warning - find better way to store reference flags for SVC
+     if(vaapi_context.pic_param.pic_flags.bits.refresh_last)
+       vaapi_context.last_ref_surface = vaapi_context.recon_surface;
+     vaapi_context.golden_ref_surface = vp8enc_update_reference(vaapi_context.golden_ref_surface,vaapi_context.alt_ref_surface,vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame, vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_golden );
+     vaapi_context.alt_ref_surface = vp8enc_update_reference(vaapi_context.alt_ref_surface,vaapi_context.golden_ref_surface,vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame, vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_alternate );
+  }
+
+  vaapi_context.recon_surface = vp8enc_get_unused_surface();
 }
 
 void vp8enc_init_MiscParameterBuffers(VAEncMiscParameterHRD *hrd, VAEncMiscParameterFrameRate *frame_rate, VAEncMiscParameterRateControl *rate_control)
@@ -413,7 +485,7 @@ void vp8enc_create_EncoderPipe()
 {
   VAEntrypoint entrypoints[5];
   int num_entrypoints;
-  int entrypoint_found;
+  bool entrypoint_found;
   VAConfigAttrib conf_attrib[2];
   VASurfaceAttrib surface_attrib;
   int major_ver, minor_ver;
@@ -426,14 +498,14 @@ void vp8enc_create_EncoderPipe()
   vaQueryConfigEntrypoints(vaapi_context.display, vaapi_context.profile, entrypoints,
                            &num_entrypoints);
 
-  entrypoint_found = FALSE;
+  entrypoint_found = true;
   for(int i = 0; i < num_entrypoints;i++)
   {
     if (entrypoints[i] == settings.vaapi_entry_point)
-      entrypoint_found = TRUE;
+      entrypoint_found = true;
   }
 
-  if(entrypoint_found == FALSE)
+  if(entrypoint_found == false)
   {
     fprintf(stderr,"VAEntrypoint not found!\n");
     assert(0);
@@ -477,6 +549,11 @@ void vp8enc_create_EncoderPipe()
   );
 
   CHECK_VASTATUS(va_status, "vaCreateSurfaces");
+
+  vaapi_context.recon_surface = vaapi_context.surfaces[0];
+  vaapi_context.last_ref_surface = VA_INVALID_SURFACE;
+  vaapi_context.golden_ref_surface = VA_INVALID_SURFACE;
+  vaapi_context.alt_ref_surface = VA_INVALID_SURFACE;
 
   /* Create a context for this Encoder pipe */
   /* the surface is added to the render_target list when creating the context */
@@ -532,11 +609,11 @@ vp8enc_store_coded_buffer(FILE *vp8_fp)
     VASurfaceStatus surface_status;
     size_t w_items;
 
-    va_status = vaSyncSurface(vaapi_context.display, vaapi_context.surfaces[SID_INPUT_PICTURE]); //Hack-Warning Surface
+    va_status = vaSyncSurface(vaapi_context.display, vaapi_context.recon_surface); //Hack-Warning Surface
     CHECK_VASTATUS(va_status,"vaSyncSurface");
 
     surface_status = 0;
-    va_status = vaQuerySurfaceStatus(vaapi_context.display, vaapi_context.surfaces[SID_INPUT_PICTURE], &surface_status); //Hack-Warning Surface
+    va_status = vaQuerySurfaceStatus(vaapi_context.display, vaapi_context.recon_surface, &surface_status); //Hack-Warning Surface
     CHECK_VASTATUS(va_status,"vaQuerySurfaceStatus");
 
     va_status = vaMapBuffer(vaapi_context.display, vaapi_context.codedbuf_buf_id, (void **)(&coded_buffer_segment));
@@ -663,7 +740,7 @@ vp8enc_render_picture()
 
     va_status = vaBeginPicture(vaapi_context.display,
                                vaapi_context.context_id,
-                               vaapi_context.surfaces[SID_INPUT_PICTURE]); //HACK-Warning
+                               vaapi_context.recon_surface);
     CHECK_VASTATUS(va_status,"vaBeginPicture");
 
 
@@ -719,7 +796,7 @@ void parameter_check(const char *param, int val, int min, int max)
 {
   if(val < min || val > max)
   {
-    fprintf(stderr,"%s out of range (%d..%d) - %d\n",param,min,max,val);
+    fprintf(stderr,"%s out of range (%d..%d) \n",param,min,max);
     assert(0);
   }
 }
@@ -813,7 +890,7 @@ void parse_options(int ac,char *av[])
 
 int main(int argc, char *argv[])
 {
-  int current_frame;
+  int current_frame, frame_type;
   FILE *fp_vp8_output, *fp_yuv_input;
 
   if(argc < 5) {
@@ -860,13 +937,22 @@ int main(int argc, char *argv[])
   current_frame = 0;
   while (current_frame < settings.num_frames)
   {
-    vp8enc_upload_yuv_to_surface(fp_yuv_input, vaapi_context.surfaces[SID_INPUT_PICTURE],current_frame);
-    vp8enc_update_picture_parameter(KEY_FRAME);
-    vp8enc_prepare_buffers(KEY_FRAME); //HACK-Warning
+    if ( (current_frame%settings.intra_period) == 0)
+      frame_type = KEY_FRAME;
+    else
+      frame_type = INTER_FRAME;
+
+    vp8enc_upload_yuv_to_surface(fp_yuv_input, vaapi_context.recon_surface,current_frame);
+
+    vp8enc_update_picture_parameter(frame_type);
+    vp8enc_prepare_buffers(frame_type);
+
     vp8enc_render_picture();
 
-    vp8enc_store_coded_buffer(fp_vp8_output);  // HACK-Warning fixed to Keyframe
+    vp8enc_store_coded_buffer(fp_vp8_output);
     vp8enc_destroy_buffers();
+
+    vp8enc_update_reference_list(frame_type);
 
     current_frame++;
   }
