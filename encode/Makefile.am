@@ -20,7 +20,7 @@
 # TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-bin_PROGRAMS = avcenc mpeg2vaenc h264encode jpegenc vp9enc vp8enc_qnd
+bin_PROGRAMS = avcenc mpeg2vaenc h264encode jpegenc vp9enc vp8enc_qnd vp8enc_go
 noinst_PROGRAMS = svctenc
 
 AM_CPPFLAGS = \
@@ -73,6 +73,13 @@ vp9enc_LDADD       = \
 vp8enc_qnd_SOURCES     = vp8enc_qnd.c
 vp8enc_qnd_CFLAGS      = -I$(top_srcdir)/common -g
 vp8enc_qnd_LDADD       = \
+	$(LIBVA_LIBS) \
+	$(top_builddir)/common/libva-display.la \
+	-lpthread -lm
+
+vp8enc_go_SOURCES     = vp8enc_go.c
+vp8enc_go_CFLAGS      = -I$(top_srcdir)/common -g
+vp8enc_go_LDADD       = \
 	$(LIBVA_LIBS) \
 	$(top_builddir)/common/libva-display.la \
 	-lpthread -lm

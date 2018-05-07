@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <inttypes.h>
 
 #include <sys/time.h>
 #include <sys/types.h>
@@ -18,6 +19,8 @@
 #include <va/va.h>
 #include <va/va_enc_vp8.h>
 #include "va_display.h"
+
+#define MAX_XY_RESOLUTION 16364
 
 #define TRUE 1
 #define FALSE 0
@@ -43,6 +46,29 @@
 #define SID_INPUT_PICTURE NUM_REF_SURFACES
 
 #define NUM_BUFFERS 10
+
+static const struct option long_opts[] = {
+    {"help", no_argument, NULL, 0 },
+    {"rcmode", required_argument, NULL, 1 },
+    {"qp", required_argument, NULL, 2 },
+    {"intra_period", required_argument, NULL, 3 },
+    {"fb", required_argument, NULL, 4 },
+    {"lf_level", required_argument, NULL, 6 },
+//    {"opt_header", required_argument, NULL, 7},
+    {"hrd_win", required_argument, NULL, 8},
+    {"vbr_max", required_argument, NULL, 9},
+    {"fn_num", required_argument, NULL, 10},
+    {"low_power", required_argument, NULL, 11},
+    {NULL, no_argument, NULL, 0 }
+};
+
+
+static int rc_default_mode[4] = {
+    VA_RC_CQP,
+    VA_RC_CBR,
+    VA_RC_VBR,
+    VA_RC_NONE
+};
 
 struct vp8enc_settings {
   int width;
@@ -81,6 +107,7 @@ static struct vp8enc_settings settings =
     .error_resilient = 0,
     .rc_mode = VA_RC_CQP,
     .vaapi_entry_point = VAEntrypointEncSlice,
+    .num_frames = 0,
     //.num_ref_frames
  };
 
@@ -670,7 +697,118 @@ void vp8enc_destroy_buffers()
   }
 
 }
+void vp8enc_show_help ()
+{
+  printf("Usage: vp8enc_go <width> <height> <input_yuvfile> <output_vp8> additional_option\n");
+  printf("output_vp8 should use *.ivf\n");
+  printf("The additional option is listed\n");
+  printf("-f <frame rate> \n");
+  printf("--intra_period <key_frame interval>\n");
+  printf("--qp <quantization parameter> \n");
+  printf("--rcmode <rate control mode> 0: CQP, 1: CBR, 2: VBR\n");
+  printf("--fb <bitrate> (kbps unit)\n");
+  printf("--lf_level <loop filter level>  [0-63]\n");
+  printf("--hrd_win <num>  [1000-8000]\n");
+  printf("--vbr_max <num> (kbps unit. It should be greater than fb)\n");
+  //printf("--opt_header \n  write the uncompressed header manually. without this, the driver will add those headers by itself\n");
+  printf("--fn_num <num>\n  how many frames to be encoded\n");
+  printf("--low_power <num> 0: Normal mode, 1: Low power mode, others: auto mode\n");
+}
 
+void parameter_check(const char *param, int val, int min, int max)
+{
+  if(val < min || val > max)
+  {
+    fprintf(stderr,"%s out of range (%d..%d) - %d\n",param,min,max,val);
+    assert(0);
+  }
+}
+
+void parse_options(int ac,char *av[])
+{
+  int c, long_index, tmp_input;
+  while (1) {
+      c = getopt_long_only(ac,av,"hf:?",long_opts,&long_index);
+
+      if (c == -1)
+          break;
+
+      switch(c) {
+      case 'h':
+      case 0:
+          vp8enc_show_help();
+          exit(0);
+          break;
+      case 'f':
+          settings.frame_rate = atoi(optarg);
+          break;
+      case 1:
+          tmp_input = atoi(optarg);
+          if (tmp_input > 3 || tmp_input < 0)
+              tmp_input = 0;
+          settings.rc_mode = rc_default_mode[tmp_input];
+          break;
+      case 2:
+          tmp_input = atoi(optarg);
+          if (tmp_input < 0 || tmp_input > 255)
+              tmp_input = 60;
+          settings.quantization_parameter = tmp_input;
+          break;
+      case 3:
+          tmp_input = atoi(optarg);
+          if (tmp_input < 0)
+              tmp_input = 30;
+          settings.intra_period = tmp_input;
+          break;
+      case 4:
+          tmp_input = atoi(optarg);
+          settings.frame_bitrate = tmp_input;
+          break;
+      case 6:
+          tmp_input = atoi(optarg);
+          if (tmp_input < 0 || tmp_input > 63)
+              tmp_input = 10;
+          settings.loop_filter_level = tmp_input;
+          break;
+/*      case 7:
+          tmp_input = atoi(optarg);
+          if (tmp_input)
+              tmp_input = 1;
+          settings.opt_header = TRUE;
+          break;*/
+      case 8:
+          tmp_input = atoi(optarg);
+          if (tmp_input > 8000 || tmp_input < 1000)
+              tmp_input = 1500;
+          settings.hrd_window = tmp_input;
+          break;
+      case 9:
+          tmp_input = atoi(optarg);
+          if (tmp_input < 0)
+              tmp_input = 20000;
+          else if (tmp_input > 100000)
+              tmp_input = 100000;
+          settings.max_variable_bitrate = tmp_input;
+          break;
+      case 10:
+          tmp_input = atoi(optarg);
+          settings.num_frames = tmp_input;
+          break;
+      case 11:
+          tmp_input = atoi(optarg);
+          if (tmp_input == 1)
+            settings.vaapi_entry_point = VAEntrypointEncSliceLP;
+          else
+            settings.vaapi_entry_point = VAEntrypointEncSlice;
+          break;
+
+      default:
+          vp8enc_show_help();
+          exit(0);
+          break;
+    }
+  }
+}
 
 
 int main(int argc, char *argv[])
@@ -678,23 +816,39 @@ int main(int argc, char *argv[])
   int current_frame;
   FILE *fp_vp8_output, *fp_yuv_input;
 
-  fp_vp8_output = fopen("out.vp8","wb");
+  if(argc < 5) {
+      vp8enc_show_help();
+      exit(0);
+  }
+
+  fp_vp8_output = fopen(argv[4],"wb");
   if(fp_vp8_output == NULL)
   {
     fprintf(stderr,"Couldn't open output file.\n");
     return -1;
   }
 
-  fp_yuv_input = fopen("in.yuv","rb");
+  fp_yuv_input = fopen(argv[3],"rb");
   if(fp_vp8_output == NULL)
   {
     fprintf(stderr,"Couldn't open input file.\n");
     return -1;
   }
 
+  settings.width = atoi(argv[1]);
+  parameter_check("Width", settings.width, 1, MAX_XY_RESOLUTION);
+
+  settings.height = atoi(argv[2]);
+  parameter_check("Height", settings.height, 1, MAX_XY_RESOLUTION);
+
+
+  parse_options(argc-4, &argv[4]);
+
   settings.frame_size = settings.width * settings.height * 3 / 2; //NV12 Colorspace - For a 2x2 group of pixels, you have 4 Y samples and 1 U and 1 V sample.
-  settings.num_frames = vp8enc_get_FileSize(fp_yuv_input)/settings.frame_size;
+  if(!settings.num_frames)
+    settings.num_frames = vp8enc_get_FileSize(fp_yuv_input)/settings.frame_size;
   settings.codedbuf_size = settings.width * settings.height; //just a generous test
+
 
   fprintf(stderr,"num_frames: %d\n",settings.num_frames);
 
