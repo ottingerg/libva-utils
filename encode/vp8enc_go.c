@@ -161,13 +161,29 @@ vp8enc_write_dword(char *ptr, uint32_t value)
 }
 
 static void
-vp8enc_write_frame_header(FILE *vp8_output,int data_length)
+vp8enc_write_qword(char *ptr, uint64_t value)
+{
+    uint8_t *tmp;
+
+    tmp = (uint8_t *)ptr;
+    *(tmp) = (value >> 0) & 0XFF;
+    *(tmp + 1) = (value >> 8) & 0XFF;
+    *(tmp + 2) = (value >> 16) & 0XFF;
+    *(tmp + 3) = (value >> 24) & 0XFF;
+    *(tmp + 4) = (value >> 32) & 0XFF;
+    *(tmp + 5) = (value >> 40) & 0XFF;
+    *(tmp + 6) = (value >> 48) & 0XFF;
+    *(tmp + 7) = (value >> 56) & 0XFF;
+}
+
+static void
+vp8enc_write_frame_header(FILE *vp8_output,uint32_t data_length, uint64_t timestamp)
 {
   char header[12];
 
-  vp8enc_write_dword(header, (uint32_t)data_length);
-  vp8enc_write_dword(header + 4, 0);
-  vp8enc_write_dword(header + 8, 0);
+  vp8enc_write_dword(header, data_length);
+  vp8enc_write_qword(header + 4, timestamp );
+//  vp8enc_write_dword(header + 8, timestamp & 0xFFFFFFFF);
 
   fwrite(header, 1, 12, vp8_output);
 }
@@ -191,8 +207,8 @@ vp8enc_write_ivf_header(FILE *vp8_file)
     vp8enc_write_dword(header + 8, VP8_FOURCC);
     vp8enc_write_word(header + 12, settings.width);
     vp8enc_write_word(header + 14, settings.height);
-    vp8enc_write_dword(header + 16, 1);
-    vp8enc_write_dword(header + 20, settings.frame_rate);
+    vp8enc_write_dword(header + 16, settings.frame_rate);
+    vp8enc_write_dword(header + 20, 1);
     vp8enc_write_dword(header + 24, settings.num_frames);
     vp8enc_write_dword(header + 28, 0);
 
@@ -358,7 +374,14 @@ void vp8enc_init_PictureParameterBuffer(VAEncPictureParameterBufferVP8 *picParam
 
   picParam->clamp_qindex_low = settings.clamp_qindex_low;
   picParam->clamp_qindex_high = settings.clamp_qindex_high;
+
+//HACK: NOREF
+  vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
+  vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+
 }
+
+
 
 void vp8enc_update_picture_parameter(int frame_type)
 {
@@ -374,6 +397,7 @@ void vp8enc_update_picture_parameter(int frame_type)
   } else { // INTER_FRAME
     vaapi_context.pic_param.ref_flags.bits.force_kf = 0;
     vaapi_context.pic_param.pic_flags.bits.frame_type = INTER_FRAME;
+
     if(!vaapi_context.pic_param.ref_flags.bits.no_ref_last)
       vaapi_context.pic_param.ref_last_frame = vaapi_context.last_ref_surface;
     if(!vaapi_context.pic_param.ref_flags.bits.no_ref_gf)
@@ -600,7 +624,7 @@ void vp8enc_init_VaapiContext()
 
 
 static int
-vp8enc_store_coded_buffer(FILE *vp8_fp)
+vp8enc_store_coded_buffer(FILE *vp8_fp,uint64_t timestamp)
 {
     VACodedBufferSegment *coded_buffer_segment;
     uint8_t *coded_mem;
@@ -628,7 +652,7 @@ vp8enc_store_coded_buffer(FILE *vp8_fp)
 
     data_length = coded_buffer_segment->size;
 
-    vp8enc_write_frame_header(vp8_fp, data_length);
+    vp8enc_write_frame_header(vp8_fp, data_length,timestamp);
 
     do {
         w_items = fwrite(coded_mem, data_length, 1, vp8_fp);
@@ -892,6 +916,8 @@ int main(int argc, char *argv[])
 {
   int current_frame, frame_type;
   FILE *fp_vp8_output, *fp_yuv_input;
+  uint64_t timestamp;
+
 
   if(argc < 5) {
       vp8enc_show_help();
@@ -935,6 +961,7 @@ int main(int argc, char *argv[])
   vp8enc_write_ivf_header(fp_vp8_output);
 
   current_frame = 0;
+  timestamp = 0;
   while (current_frame < settings.num_frames)
   {
     if ( (current_frame%settings.intra_period) == 0)
@@ -949,12 +976,13 @@ int main(int argc, char *argv[])
 
     vp8enc_render_picture();
 
-    vp8enc_store_coded_buffer(fp_vp8_output);
+    vp8enc_store_coded_buffer(fp_vp8_output, timestamp);
     vp8enc_destroy_buffers();
 
     vp8enc_update_reference_list(frame_type);
 
-    current_frame++;
+    current_frame ++;
+    timestamp ++;
   }
 
   vp8enc_destory_EncoderPipe();
