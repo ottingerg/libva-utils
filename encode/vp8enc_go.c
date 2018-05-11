@@ -52,6 +52,7 @@ static const struct option long_opts[] = {
     {"vbr_max", required_argument, NULL, 9},
     {"fn_num", required_argument, NULL, 10},
     {"low_power", required_argument, NULL, 11},
+    {"temp_svc", required_argument, NULL, 12},
     {NULL, no_argument, NULL, 0 }
 };
 
@@ -81,6 +82,7 @@ struct vp8enc_settings {
   int codedbuf_size;
   int vbr_max;
   int hrd_window;
+  int temporal_svc_layers;
   uint32_t error_resilient;
 };
 
@@ -99,6 +101,7 @@ static struct vp8enc_settings settings =
     .rc_mode = VA_RC_CQP,
     .vaapi_entry_point = VAEntrypointEncSlice,
     .num_frames = 0,
+    .temporal_svc_layers = 1,
     //.num_ref_frames
  };
 
@@ -393,13 +396,55 @@ VASurfaceID vp8enc_get_valid_reference_frame()
 }
 #endif
 
-
-void vp8enc_update_picture_parameter(int frame_type)
+void vp8enc_set_refreshparameter_for_svct_2layers(int current_frame)
 {
+  switch(current_frame % 2) {
+    case 0:
+      //Layer 1
+      vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
+      vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+      break;
+    case 1:
+      //Layer 2
+      vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame = 1;
+      break;
+  }
+}
+
+void vp8enc_set_refreshparameter_for_svct_3layers(int current_frame)
+{
+  switch(current_frame % 4) {
+    case 0:
+      //Layer 1
+      vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
+      vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+      break;
+    case 1:
+    case 3:
+      //Layer 3
+      vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame  = 1;
+      break;
+    case 2:
+      vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame = 1;
+      vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+      break;
+  }
+}
+
+void vp8enc_update_picture_parameter(int frame_type, int current_frame)
+{
+
   vaapi_context.pic_param.reconstructed_frame = vaapi_context.recon_surface;
   vaapi_context.pic_param.ref_last_frame = VA_INVALID_SURFACE;
   vaapi_context.pic_param.ref_gf_frame = VA_INVALID_SURFACE;
   vaapi_context.pic_param.ref_arf_frame = VA_INVALID_SURFACE;
+  vaapi_context.pic_param.pic_flags.bits.refresh_last = 0;
+  vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame = 0;
+  vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame = 0;
+  vaapi_context.pic_param.ref_flags.bits.no_ref_last = 0;
+  vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 0;
+  vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 0;
+
 
   if (frame_type == KEY_FRAME)
   {
@@ -415,20 +460,40 @@ void vp8enc_update_picture_parameter(int frame_type)
     vaapi_context.pic_param.ref_arf_frame = vp8enc_get_valid_reference_frame();
 #endif
 
+    switch(settings.temporal_svc_layers)
+    {
+      case 1:
+        //Standard behavoir only 1 Temporal Layer
+        vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
+        vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_golden = 1;
+        vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_alternate = 2;
+        break;
+      case 2:
+        //2 Temporal Layers
+        vp8enc_set_refreshparameter_for_svct_2layers(current_frame);
+        break;
+      case 3:
+        //3 Temporal Layers
+        vp8enc_set_refreshparameter_for_svct_3layers(current_frame);
+        break;
+      default:
+        //should never happen
+        fprintf(stderr,"Only 1,2 or 3 TemporalLayers supported.\n");
+        break;
+    }
+
+
     if(!vaapi_context.pic_param.ref_flags.bits.no_ref_last)
       vaapi_context.pic_param.ref_last_frame = vaapi_context.last_ref_surface;
     if(!vaapi_context.pic_param.ref_flags.bits.no_ref_gf)
       vaapi_context.pic_param.ref_gf_frame = vaapi_context.golden_ref_surface;
     if(!vaapi_context.pic_param.ref_flags.bits.no_ref_arf)
       vaapi_context.pic_param.ref_arf_frame = vaapi_context.alt_ref_surface;
+
   }
 
   //Hack-Warning - Update Pattern fixed (not suitable for SVC)
-  vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
-  vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame = 0;
-  vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_golden = 1;
-  vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame = 0;
-  vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_alternate = 2;
+
 }
 
 VASurfaceID vp8enc_get_unused_surface()
@@ -831,6 +896,7 @@ void vp8enc_show_help ()
   //printf("--opt_header \n  write the uncompressed header manually. without this, the driver will add those headers by itself\n");
   printf("--fn_num <num>\n  how many frames to be encoded\n");
   printf("--low_power <num> 0: Normal mode, 1: Low power mode, others: auto mode\n");
+  printf("--temp_svc <num> number of temporal layers 2 or 3\n");
 }
 
 void parameter_check(const char *param, int val, int min, int max)
@@ -919,13 +985,24 @@ void parse_options(int ac,char *av[])
           else
             settings.vaapi_entry_point = VAEntrypointEncSlice;
           break;
+      case 12:
+          tmp_input = atoi(optarg);
+          if(tmp_input != 2 && tmp_input != 3)
+            goto error;
+          settings.temporal_svc_layers = tmp_input;
+          break;
 
       default:
-          vp8enc_show_help();
-          exit(0);
+          goto error;
           break;
     }
   }
+  return;
+
+error:
+  vp8enc_show_help();
+  exit(0);
+
 }
 
 
@@ -988,7 +1065,7 @@ int main(int argc, char *argv[])
 
     vp8enc_upload_yuv_to_surface(fp_yuv_input, vaapi_context.recon_surface,current_frame);
 
-    vp8enc_update_picture_parameter(frame_type);
+    vp8enc_update_picture_parameter(frame_type, current_frame);
     vp8enc_prepare_buffers(frame_type);
 
     vp8enc_render_picture();
