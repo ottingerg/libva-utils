@@ -375,12 +375,23 @@ void vp8enc_init_PictureParameterBuffer(VAEncPictureParameterBufferVP8 *picParam
   picParam->clamp_qindex_low = settings.clamp_qindex_low;
   picParam->clamp_qindex_high = settings.clamp_qindex_high;
 
-//HACK: NOREF
-  vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
-  vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
-
 }
 
+#ifdef INTEL_VAAPI_DRIVER_REFERENCE_CHECK_WORKAROUND
+VASurfaceID vp8enc_get_valid_reference_frame()
+{
+  if(!vaapi_context.pic_param.ref_flags.bits.no_ref_last)
+    return vaapi_context.last_ref_surface;
+  if(!vaapi_context.pic_param.ref_flags.bits.no_ref_gf)
+    return vaapi_context.golden_ref_surface;
+  if(!vaapi_context.pic_param.ref_flags.bits.no_ref_arf)
+    return vaapi_context.alt_ref_surface;
+
+  fprintf(stderr, "No valid Reference Frame for I-Frame found\n");
+  assert(0);
+
+}
+#endif
 
 
 void vp8enc_update_picture_parameter(int frame_type)
@@ -397,6 +408,12 @@ void vp8enc_update_picture_parameter(int frame_type)
   } else { // INTER_FRAME
     vaapi_context.pic_param.ref_flags.bits.force_kf = 0;
     vaapi_context.pic_param.pic_flags.bits.frame_type = INTER_FRAME;
+
+#ifdef INTEL_VAAPI_DRIVER_REFERENCE_CHECK_WORKAROUND
+    vaapi_context.pic_param.ref_last_frame = vp8enc_get_valid_reference_frame();
+    vaapi_context.pic_param.ref_gf_frame = vp8enc_get_valid_reference_frame();
+    vaapi_context.pic_param.ref_arf_frame = vp8enc_get_valid_reference_frame();
+#endif
 
     if(!vaapi_context.pic_param.ref_flags.bits.no_ref_last)
       vaapi_context.pic_param.ref_last_frame = vaapi_context.last_ref_surface;
