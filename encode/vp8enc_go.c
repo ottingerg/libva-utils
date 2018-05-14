@@ -53,6 +53,7 @@ static const struct option long_opts[] = {
     {"fn_num", required_argument, NULL, 10},
     {"low_power", required_argument, NULL, 11},
     {"temp_svc", required_argument, NULL, 12},
+    {"error_resilient", no_argument, NULL, 13},
     {NULL, no_argument, NULL, 0 }
 };
 
@@ -380,6 +381,7 @@ void vp8enc_init_PictureParameterBuffer(VAEncPictureParameterBufferVP8 *picParam
 
 }
 
+//#define INTEL_VAAPI_DRIVER_REFERENCE_CHECK_WORKAROUND
 #ifdef INTEL_VAAPI_DRIVER_REFERENCE_CHECK_WORKAROUND
 VASurfaceID vp8enc_get_valid_reference_frame()
 {
@@ -398,35 +400,53 @@ VASurfaceID vp8enc_get_valid_reference_frame()
 
 void vp8enc_set_refreshparameter_for_svct_2layers(int current_frame)
 {
+  vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+
   switch(current_frame % 2) {
     case 0:
-      //Layer 1
+      //Layer 0
       vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
-      vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+      vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
+      vaapi_context.pic_param.ref_flags.bits.temporal_id = 0;
       break;
     case 1:
-      //Layer 2
-      vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame = 1;
+      //Layer 1
+      vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame = 1;
+      vaapi_context.pic_param.ref_flags.bits.temporal_id = 1;
       break;
   }
 }
 
 void vp8enc_set_refreshparameter_for_svct_3layers(int current_frame)
 {
+  vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+
   switch(current_frame % 4) {
     case 0:
-      //Layer 1
+      //Layer 0
       vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
-      vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+      vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
+      vaapi_context.pic_param.ref_flags.bits.temporal_id = 0;
       break;
     case 1:
-    case 3:
-      //Layer 3
+      //Layer 2
       vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame  = 1;
+      //vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 0;
+      //vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
+      vaapi_context.pic_param.ref_flags.bits.temporal_id = 2;
+      break;
+    case 3:
+      //Layer 2
+      vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame  = 1;
+      //vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 0;
+      //vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
+      vaapi_context.pic_param.ref_flags.bits.temporal_id = 2;
       break;
     case 2:
-      vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame = 1;
-      vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+      //Layer 1
+      vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame = 1;
+      //vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
+      vaapi_context.pic_param.ref_flags.bits.temporal_id = 1;
       break;
   }
 }
@@ -441,9 +461,12 @@ void vp8enc_update_picture_parameter(int frame_type, int current_frame)
   vaapi_context.pic_param.pic_flags.bits.refresh_last = 0;
   vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame = 0;
   vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame = 0;
+  vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_golden = 0;
+  vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_alternate = 0;
   vaapi_context.pic_param.ref_flags.bits.no_ref_last = 0;
   vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 0;
   vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 0;
+
 
 
   if (frame_type == KEY_FRAME)
@@ -467,6 +490,7 @@ void vp8enc_update_picture_parameter(int frame_type, int current_frame)
         vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
         vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_golden = 1;
         vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_alternate = 2;
+        vaapi_context.pic_param.ref_flags.bits.temporal_id = 0;
         break;
       case 2:
         //2 Temporal Layers
@@ -897,6 +921,7 @@ void vp8enc_show_help ()
   printf("--fn_num <num>\n  how many frames to be encoded\n");
   printf("--low_power <num> 0: Normal mode, 1: Low power mode, others: auto mode\n");
   printf("--temp_svc <num> number of temporal layers 2 or 3\n");
+  printf("--error_resilient Turn on Error resilient mode\n");
 }
 
 void parameter_check(const char *param, int val, int min, int max)
@@ -991,7 +1016,9 @@ void parse_options(int ac,char *av[])
             goto error;
           settings.temporal_svc_layers = tmp_input;
           break;
-
+      case 13:
+          settings.error_resilient = 1;
+          break;
       default:
           goto error;
           break;
