@@ -149,7 +149,6 @@ static struct vp8enc_settings settings =
     .vaapi_entry_point = VAEntrypointEncSlice,
     .num_frames = 0,
     .temporal_svc_layers = 1,
-    //.num_ref_frames
  };
 
  struct vp8enc_vaapi_context {
@@ -233,7 +232,6 @@ vp8enc_write_frame_header(FILE *vp8_output,uint32_t data_length, uint64_t timest
 
   vp8enc_write_dword(header, data_length);
   vp8enc_write_qword(header + 4, timestamp );
-//  vp8enc_write_dword(header + 8, timestamp & 0xFFFFFFFF);
 
   fwrite(header, 1, 12, vp8_output);
 }
@@ -761,11 +759,11 @@ vp8enc_store_coded_buffer(FILE *vp8_fp,uint64_t timestamp)
     VASurfaceStatus surface_status;
     size_t w_items;
 
-    va_status = vaSyncSurface(vaapi_context.display, vaapi_context.recon_surface); //Hack-Warning Surface
+    va_status = vaSyncSurface(vaapi_context.display, vaapi_context.recon_surface);
     CHECK_VASTATUS(va_status,"vaSyncSurface");
 
     surface_status = 0;
-    va_status = vaQuerySurfaceStatus(vaapi_context.display, vaapi_context.recon_surface, &surface_status); //Hack-Warning Surface
+    va_status = vaQuerySurfaceStatus(vaapi_context.display, vaapi_context.recon_surface, &surface_status);
     CHECK_VASTATUS(va_status,"vaQuerySurfaceStatus");
 
     va_status = vaMapBuffer(vaapi_context.display, vaapi_context.codedbuf_buf_id, (void **)(&coded_buffer_segment));
