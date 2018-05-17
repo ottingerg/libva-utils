@@ -47,13 +47,12 @@ static const struct option long_opts[] = {
     {"intra_period", required_argument, NULL, 3 },
     {"fb", required_argument, NULL, 4 },
     {"lf_level", required_argument, NULL, 6 },
-//    {"opt_header", required_argument, NULL, 7},
-    {"hrd_win", required_argument, NULL, 8},
-    {"vbr_max", required_argument, NULL, 9},
-    {"fn_num", required_argument, NULL, 10},
-    {"low_power", required_argument, NULL, 11},
-    {"temp_svc", required_argument, NULL, 12},
-    {"error_resilient", no_argument, NULL, 13},
+    {"hrd_win", required_argument, NULL, 7},
+    {"vbr_max", required_argument, NULL, 8},
+    {"fn_num", required_argument, NULL, 9},
+    {"low_power", required_argument, NULL, 10},
+    {"temp_svc", required_argument, NULL, 11},
+    {"error_resilient", no_argument, NULL, 12},
     {NULL, no_argument, NULL, 0 }
 };
 
@@ -349,12 +348,7 @@ void vp8enc_init_SequenceParameterBuffer(VAEncSequenceParameterBufferVP8* seqPar
   else
     seqParam->bits_per_second = 0;
 
-  //HACK-Warning: Hardcoded to I-Frames
-  seqParam->kf_max_dist = 1;
-  seqParam->kf_min_dist = 1;
-  seqParam->intra_period = 1;
-
-  //seqParam->intra_period = settings.intra_period;
+  seqParam->intra_period = settings.intra_period;
   seqParam->error_resilient = settings.error_resilient;
 
   for (size_t i = 0; i < N_ELEMENTS(seqParam->reference_frames); i++)
@@ -381,142 +375,120 @@ void vp8enc_init_PictureParameterBuffer(VAEncPictureParameterBufferVP8 *picParam
 
 }
 
-//#define INTEL_VAAPI_DRIVER_REFERENCE_CHECK_WORKAROUND
-#ifdef INTEL_VAAPI_DRIVER_REFERENCE_CHECK_WORKAROUND
-VASurfaceID vp8enc_get_valid_reference_frame()
+void vp8enc_set_refreshparameter_for_svct_2layers(VAEncPictureParameterBufferVP8 *picParam, int current_frame)
 {
-  if(!vaapi_context.pic_param.ref_flags.bits.no_ref_last)
-    return vaapi_context.last_ref_surface;
-  if(!vaapi_context.pic_param.ref_flags.bits.no_ref_gf)
-    return vaapi_context.golden_ref_surface;
-  if(!vaapi_context.pic_param.ref_flags.bits.no_ref_arf)
-    return vaapi_context.alt_ref_surface;
+  //Pattern taken from libyami
 
-  fprintf(stderr, "No valid Reference Frame for I-Frame found\n");
-  assert(0);
-
-}
-#endif
-
-void vp8enc_set_refreshparameter_for_svct_2layers(int current_frame)
-{
-  vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+  picParam->ref_flags.bits.no_ref_arf = 1;
 
   switch(current_frame % 2) {
     case 0:
       //Layer 0
-      vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
-      vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
-      vaapi_context.pic_param.ref_flags.bits.temporal_id = 0;
+      picParam->pic_flags.bits.refresh_last = 1;
+      picParam->ref_flags.bits.no_ref_gf = 1;
+      picParam->ref_flags.bits.temporal_id = 0;
       break;
     case 1:
       //Layer 1
-      vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame = 1;
-      vaapi_context.pic_param.ref_flags.bits.temporal_id = 1;
+      picParam->pic_flags.bits.refresh_golden_frame = 1;
+      picParam->ref_flags.bits.temporal_id = 1;
       break;
   }
 }
 
-void vp8enc_set_refreshparameter_for_svct_3layers(int current_frame)
+void vp8enc_set_refreshparameter_for_svct_3layers(VAEncPictureParameterBufferVP8 *picParam, int current_frame)
 {
-  vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 1;
+  //Pattern taken from libyami - Note that the alternate frame is never referenced,
+  //this is because, libyami implementation suggests to be able to drop individual
+  //frames from Layer 2 on bad network connections
+
+  picParam->ref_flags.bits.no_ref_arf = 1;
 
   switch(current_frame % 4) {
     case 0:
       //Layer 0
-      vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
-      vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
-      vaapi_context.pic_param.ref_flags.bits.temporal_id = 0;
+      picParam->pic_flags.bits.refresh_last = 1;
+      picParam->ref_flags.bits.no_ref_gf = 1;
+      picParam->ref_flags.bits.temporal_id = 0;
       break;
     case 1:
-      //Layer 2
-      vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame  = 1;
-      //vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 0;
-      //vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
-      vaapi_context.pic_param.ref_flags.bits.temporal_id = 2;
-      break;
     case 3:
       //Layer 2
-      vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame  = 1;
-      //vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 0;
-      //vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
-      vaapi_context.pic_param.ref_flags.bits.temporal_id = 2;
+      picParam->pic_flags.bits.refresh_alternate_frame  = 1;
+      picParam->ref_flags.bits.temporal_id = 2;
       break;
     case 2:
       //Layer 1
-      vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame = 1;
-      //vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 1;
-      vaapi_context.pic_param.ref_flags.bits.temporal_id = 1;
+      picParam->pic_flags.bits.refresh_golden_frame = 1;
+      picParam->ref_flags.bits.temporal_id = 1;
       break;
   }
+}
+
+void vp8enc_reset_picture_parameter_references(VAEncPictureParameterBufferVP8 *picParam)
+{
+  picParam->ref_last_frame = VA_INVALID_SURFACE;
+  picParam->ref_gf_frame = VA_INVALID_SURFACE;
+  picParam->ref_arf_frame = VA_INVALID_SURFACE;
+  picParam->pic_flags.bits.refresh_last = 0;
+  picParam->pic_flags.bits.refresh_golden_frame = 0;
+  picParam->pic_flags.bits.refresh_alternate_frame = 0;
+  picParam->pic_flags.bits.copy_buffer_to_golden = 0;
+  picParam->pic_flags.bits.copy_buffer_to_alternate = 0;
+  picParam->ref_flags.bits.no_ref_last = 0;
+  picParam->ref_flags.bits.no_ref_gf = 0;
+  picParam->ref_flags.bits.no_ref_arf = 0;
 }
 
 void vp8enc_update_picture_parameter(int frame_type, int current_frame)
 {
 
-  vaapi_context.pic_param.reconstructed_frame = vaapi_context.recon_surface;
-  vaapi_context.pic_param.ref_last_frame = VA_INVALID_SURFACE;
-  vaapi_context.pic_param.ref_gf_frame = VA_INVALID_SURFACE;
-  vaapi_context.pic_param.ref_arf_frame = VA_INVALID_SURFACE;
-  vaapi_context.pic_param.pic_flags.bits.refresh_last = 0;
-  vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame = 0;
-  vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame = 0;
-  vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_golden = 0;
-  vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_alternate = 0;
-  vaapi_context.pic_param.ref_flags.bits.no_ref_last = 0;
-  vaapi_context.pic_param.ref_flags.bits.no_ref_gf = 0;
-  vaapi_context.pic_param.ref_flags.bits.no_ref_arf = 0;
+  VAEncPictureParameterBufferVP8 *picParam = &vaapi_context.pic_param;
 
+  picParam->reconstructed_frame = vaapi_context.recon_surface;
 
+  vp8enc_reset_picture_parameter_references(picParam);
 
   if (frame_type == KEY_FRAME)
   {
-    vaapi_context.pic_param.ref_flags.bits.force_kf = 1;
-    vaapi_context.pic_param.pic_flags.bits.frame_type = KEY_FRAME;
+    picParam->ref_flags.bits.force_kf = 1;
+    picParam->pic_flags.bits.frame_type = KEY_FRAME;
   } else { // INTER_FRAME
-    vaapi_context.pic_param.ref_flags.bits.force_kf = 0;
-    vaapi_context.pic_param.pic_flags.bits.frame_type = INTER_FRAME;
-
-#ifdef INTEL_VAAPI_DRIVER_REFERENCE_CHECK_WORKAROUND
-    vaapi_context.pic_param.ref_last_frame = vp8enc_get_valid_reference_frame();
-    vaapi_context.pic_param.ref_gf_frame = vp8enc_get_valid_reference_frame();
-    vaapi_context.pic_param.ref_arf_frame = vp8enc_get_valid_reference_frame();
-#endif
+    picParam->ref_flags.bits.force_kf = 0;
+    picParam->pic_flags.bits.frame_type = INTER_FRAME;
 
     switch(settings.temporal_svc_layers)
     {
       case 1:
         //Standard behavoir only 1 Temporal Layer
-        vaapi_context.pic_param.pic_flags.bits.refresh_last = 1;
-        vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_golden = 1;
-        vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_alternate = 2;
-        vaapi_context.pic_param.ref_flags.bits.temporal_id = 0;
+        picParam->pic_flags.bits.refresh_last = 1;
+        picParam->pic_flags.bits.copy_buffer_to_golden = 1;
+        picParam->pic_flags.bits.copy_buffer_to_alternate = 2;
+        picParam->ref_flags.bits.temporal_id = 0;
         break;
       case 2:
         //2 Temporal Layers
-        vp8enc_set_refreshparameter_for_svct_2layers(current_frame);
+        vp8enc_set_refreshparameter_for_svct_2layers(picParam,current_frame);
         break;
       case 3:
         //3 Temporal Layers
-        vp8enc_set_refreshparameter_for_svct_3layers(current_frame);
+        vp8enc_set_refreshparameter_for_svct_3layers(picParam,current_frame);
         break;
       default:
         //should never happen
         fprintf(stderr,"Only 1,2 or 3 TemporalLayers supported.\n");
+        assert(0);
         break;
     }
 
-
-    if(!vaapi_context.pic_param.ref_flags.bits.no_ref_last)
-      vaapi_context.pic_param.ref_last_frame = vaapi_context.last_ref_surface;
-    if(!vaapi_context.pic_param.ref_flags.bits.no_ref_gf)
-      vaapi_context.pic_param.ref_gf_frame = vaapi_context.golden_ref_surface;
-    if(!vaapi_context.pic_param.ref_flags.bits.no_ref_arf)
-      vaapi_context.pic_param.ref_arf_frame = vaapi_context.alt_ref_surface;
+    if(!picParam->ref_flags.bits.no_ref_last)
+      picParam->ref_last_frame = vaapi_context.last_ref_surface;
+    if(!picParam->ref_flags.bits.no_ref_gf)
+      picParam->ref_gf_frame = vaapi_context.golden_ref_surface;
+    if(!picParam->ref_flags.bits.no_ref_arf)
+      picParam->ref_arf_frame = vaapi_context.alt_ref_surface;
 
   }
-
-  //Hack-Warning - Update Pattern fixed (not suitable for SVC)
 
 }
 
@@ -560,17 +532,20 @@ VASurfaceID vp8enc_update_reference(VASurfaceID current_surface, VASurfaceID sec
 
 void vp8enc_update_reference_list(int frame_type)
 {
+
+  VAEncPictureParameterBufferVP8 *picParam = &vaapi_context.pic_param;
+
   if (frame_type == KEY_FRAME)
   {
      vaapi_context.last_ref_surface = vaapi_context.recon_surface;
      vaapi_context.golden_ref_surface = vaapi_context.recon_surface;
      vaapi_context.alt_ref_surface = vaapi_context.recon_surface;
   } else { // INTER_FRAME
-    //HACK-Warning - find better way to store reference flags for SVC
-     if(vaapi_context.pic_param.pic_flags.bits.refresh_last)
+     //check refresh_X and copy_buffer_to_golden_X and update references accordingly
+     if(picParam->pic_flags.bits.refresh_last)
        vaapi_context.last_ref_surface = vaapi_context.recon_surface;
-     vaapi_context.golden_ref_surface = vp8enc_update_reference(vaapi_context.golden_ref_surface,vaapi_context.alt_ref_surface,vaapi_context.pic_param.pic_flags.bits.refresh_golden_frame, vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_golden );
-     vaapi_context.alt_ref_surface = vp8enc_update_reference(vaapi_context.alt_ref_surface,vaapi_context.golden_ref_surface,vaapi_context.pic_param.pic_flags.bits.refresh_alternate_frame, vaapi_context.pic_param.pic_flags.bits.copy_buffer_to_alternate );
+     vaapi_context.golden_ref_surface = vp8enc_update_reference(vaapi_context.golden_ref_surface,vaapi_context.alt_ref_surface,picParam->pic_flags.bits.refresh_golden_frame, picParam->pic_flags.bits.copy_buffer_to_golden );
+     vaapi_context.alt_ref_surface = vp8enc_update_reference(vaapi_context.alt_ref_surface,vaapi_context.golden_ref_surface,picParam->pic_flags.bits.refresh_alternate_frame, picParam->pic_flags.bits.copy_buffer_to_alternate );
   }
 
   vaapi_context.recon_surface = vp8enc_get_unused_surface();
@@ -783,6 +758,8 @@ int vp8enc_prepare_buffers(int frame_type)
   int num_buffers = 0;
   VABufferID *va_buffers;
   VAStatus va_status;
+  VAEncPictureParameterBufferVP8 *picParam = &vaapi_context.pic_param;
+
 
   va_buffers = vaapi_context.va_buffers;
   /* coded buffer */
@@ -804,7 +781,7 @@ int vp8enc_prepare_buffers(int frame_type)
   va_buffers ++; num_buffers++;
 
   /* picture parameter set */
-  vaapi_context.pic_param.coded_buf = vaapi_context.codedbuf_buf_id;
+  picParam->coded_buf = vaapi_context.codedbuf_buf_id;
 
   va_status = vaCreateBuffer(vaapi_context.display,
                              vaapi_context.context_id,
@@ -917,7 +894,6 @@ void vp8enc_show_help ()
   printf("--lf_level <loop filter level>  [0-63]\n");
   printf("--hrd_win <num>  [1000-8000]\n");
   printf("--vbr_max <num> (kbps unit. It should be greater than fb)\n");
-  //printf("--opt_header \n  write the uncompressed header manually. without this, the driver will add those headers by itself\n");
   printf("--fn_num <num>\n  how many frames to be encoded\n");
   printf("--low_power <num> 0: Normal mode, 1: Low power mode, others: auto mode\n");
   printf("--temp_svc <num> number of temporal layers 2 or 3\n");
@@ -935,6 +911,8 @@ void parameter_check(const char *param, int val, int min, int max)
 
 void parse_options(int ac,char *av[])
 {
+//Questions: Should application exit if parameter out of range are provided or adjust them to be within range?
+
   int c, long_index, tmp_input;
   while (1) {
       c = getopt_long_only(ac,av,"hf:?",long_opts,&long_index);
@@ -979,19 +957,13 @@ void parse_options(int ac,char *av[])
               tmp_input = 10;
           settings.loop_filter_level = tmp_input;
           break;
-/*      case 7:
-          tmp_input = atoi(optarg);
-          if (tmp_input)
-              tmp_input = 1;
-          settings.opt_header = TRUE;
-          break;*/
-      case 8:
+      case 7:
           tmp_input = atoi(optarg);
           if (tmp_input > 8000 || tmp_input < 1000)
               tmp_input = 1500;
           settings.hrd_window = tmp_input;
           break;
-      case 9:
+      case 8:
           tmp_input = atoi(optarg);
           if (tmp_input < 0)
               tmp_input = 20000;
@@ -999,24 +971,24 @@ void parse_options(int ac,char *av[])
               tmp_input = 100000;
           settings.max_variable_bitrate = tmp_input;
           break;
-      case 10:
+      case 9:
           tmp_input = atoi(optarg);
           settings.num_frames = tmp_input;
           break;
-      case 11:
+      case 10:
           tmp_input = atoi(optarg);
           if (tmp_input == 1)
             settings.vaapi_entry_point = VAEntrypointEncSliceLP;
           else
             settings.vaapi_entry_point = VAEntrypointEncSlice;
           break;
-      case 12:
+      case 11:
           tmp_input = atoi(optarg);
           if(tmp_input != 2 && tmp_input != 3)
             goto error;
           settings.temporal_svc_layers = tmp_input;
           break;
-      case 13:
+      case 12:
           settings.error_resilient = 1;
           break;
       default:
@@ -1071,7 +1043,7 @@ int main(int argc, char *argv[])
   settings.frame_size = settings.width * settings.height * 3 / 2; //NV12 Colorspace - For a 2x2 group of pixels, you have 4 Y samples and 1 U and 1 V sample.
   if(!settings.num_frames)
     settings.num_frames = vp8enc_get_FileSize(fp_yuv_input)/settings.frame_size;
-  settings.codedbuf_size = settings.width * settings.height; //just a generous test
+  settings.codedbuf_size = settings.width * settings.height; //just a generous assumptions
 
 
   fprintf(stderr,"num_frames: %d\n",settings.num_frames);
@@ -1090,7 +1062,7 @@ int main(int argc, char *argv[])
     else
       frame_type = INTER_FRAME;
 
-    vp8enc_upload_yuv_to_surface(fp_yuv_input, vaapi_context.recon_surface,current_frame);
+    vp8enc_upload_yuv_to_surface(fp_yuv_input, vaapi_context.recon_surface, current_frame);
 
     vp8enc_update_picture_parameter(frame_type, current_frame);
     vp8enc_prepare_buffers(frame_type);
