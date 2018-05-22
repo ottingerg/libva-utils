@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
+
+#define VLC_PLAYER_HACK
 
 struct ivf_header {
   char signature[4];
@@ -12,12 +15,12 @@ struct ivf_header {
   uint32_t time_scale;
   uint32_t num_frames;
   uint32_t reserved;
-};
+} __attribute__((packed));
 
 struct frame_header {
   uint32_t frame_size;
   uint64_t timestamp;
-};
+} __attribute__((packed));
 
 void main()
 {
@@ -29,21 +32,28 @@ void main()
   fprintf(stderr,"sizeof frame_header: %ld sizeof ivf header %ld\n",sizeof(struct frame_header),sizeof(struct ivf_header));
   fread(&ivf, sizeof(struct ivf_header),1,stdin);
   fprintf(stderr,"num frames: %d\n",ivf.num_frames);
+  fprintf(stderr,"frame_rate: %d, time_scale: %d\n", ivf.frame_rate, ivf.time_scale);
   //ivf.frame_rate /= 2;
   ivf.time_scale *= 2;
   ivf.num_frames /= 2;
+
+#ifdef VLC_PLAYER_HACK //VLC doens't accept fractional timebase 
+  while(ivf.frame_rate % ivf.time_scale)
+    ivf.frame_rate ++;
+#endif
+
   fwrite(&ivf, sizeof(struct ivf_header),1,stdout);
 
   skip = 0;
-  while(fread(&frame,12,1,stdin) == 1)
+  while(fread(&frame,sizeof(struct frame_header),1,stdin) == 1)
   {
     //fprintf(stderr,"frame size: %d\n",frame.frame_size);
     fread(&frame_buffer, frame.frame_size,1,stdin);
     if(!skip)
     {
-      //frame.timestamp /= 2;
-      fprintf(stderr,"File pos: %lx\n",ftell(stdout));
-      fwrite(&frame, 12, 1, stdout);
+      frame.timestamp /= 2;
+      fprintf(stderr,"Timestamp: %ld File pos: %lx\n",frame.timestamp, ftell(stdout));
+      fwrite(&frame, sizeof(struct frame_header), 1, stdout);
       fwrite(&frame_buffer, frame.frame_size, 1, stdout );
       skip = 1;
     } else {
