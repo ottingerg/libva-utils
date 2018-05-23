@@ -67,7 +67,18 @@
 #include <va/va_enc_vp8.h>
 #include "va_display.h"
 
-#define MAX_XY_RESOLUTION 16364
+#define MAX_XY_RESOLUTION       16364
+
+#define KEY_FRAME               0
+#define INTER_FRAME             1
+
+#define NUM_SURFACES            4
+#define NUM_BUFFERS             10
+
+#define VP8ENC_OK               0
+#define VP8ENC_FAIL             -1
+#define PARSE_OPTIONS_OK        0
+#define PARSE_OPTIONS_FAIL      -1
 
 #ifndef N_ELEMENTS
 #define N_ELEMENTS(array) (sizeof(array)/sizeof(array[0]))
@@ -81,11 +92,7 @@
     }
 #endif
 
-#define KEY_FRAME               0
-#define INTER_FRAME             1
 
-#define NUM_SURFACES            4
-#define NUM_BUFFERS             10
 
 static const struct option long_opts[] = {
     {"help", no_argument, NULL, 0 },
@@ -300,7 +307,7 @@ vp8enc_upload_yuv_to_surface(FILE *yuv_fp, VASurfaceID surface_id, int current_f
                 fileno(yuv_fp), mmap_start);
 
     if (yuv_mmap_ptr == MAP_FAILED) {
-      fprintf(stderr,"Failed to mmap YUV file.\n");
+      fprintf(stderr,"Error: Failed to mmap YUV file.\n");
       assert(0);
     }
 
@@ -523,7 +530,7 @@ void vp8enc_update_picture_parameter(int frame_type, int current_frame)
         break;
       default:
         //should never happen
-        fprintf(stderr,"Only 1,2 or 3 TemporalLayers supported.\n");
+        fprintf(stderr,"Error: Only 1,2 or 3 TemporalLayers supported.\n");
         assert(0);
         break;
     }
@@ -551,7 +558,7 @@ VASurfaceID vp8enc_get_unused_surface()
   }
 
   //No unused surface found - should never happen.
-  fprintf(stderr, "No unused surface found!\n");
+  fprintf(stderr, "Error: No unused surface found!\n");
   assert(0);
 
 }
@@ -569,7 +576,7 @@ VASurfaceID vp8enc_update_reference(VASurfaceID current_surface, VASurfaceID sec
     case 2:
       return second_copy_surface;
     default: // should never happen
-      fprintf(stderr, "Invalid copy_buffer_to_X flag\n");
+      fprintf(stderr, "Error: Invalid copy_buffer_to_X flag\n");
       assert(0);
   }
 
@@ -659,7 +666,7 @@ void vp8enc_create_EncoderPipe()
 
   if(entrypoint_found == false)
   {
-    fprintf(stderr,"VAEntrypoint not found!\n");
+    fprintf(stderr,"Error: VAEntrypoint not found!\n");
     assert(0);
   }
 
@@ -670,13 +677,13 @@ void vp8enc_create_EncoderPipe()
                         &conf_attrib[0], 2);
 
   if ((conf_attrib[0].value & VA_RT_FORMAT_YUV420) == 0) {
-      fprintf(stderr, "Input colorspace YUV420 not supported, exit\n");
+      fprintf(stderr, "Error: Input colorspace YUV420 not supported, exit\n");
       assert(0);
   }
 
   if ((conf_attrib[1].value & settings.rc_mode) == 0) {
       /* Can't find matched RC mode */
-      fprintf(stderr, "Can't find the desired RC mode, exit\n");
+      fprintf(stderr, "Error: Can't find the desired RC mode, exit\n");
       assert(0);
   }
 
@@ -773,7 +780,7 @@ vp8enc_store_coded_buffer(FILE *vp8_fp,uint64_t timestamp)
     coded_mem = coded_buffer_segment->buf;
 
     if (coded_buffer_segment->status & VA_CODED_BUF_STATUS_SLICE_OVERFLOW_MASK) {
-        fprintf(stderr,"CodeBuffer Size too small\n");
+        fprintf(stderr,"Error: CodeBuffer Size too small\n");
         vaUnmapBuffer(vaapi_context.display, vaapi_context.codedbuf_buf_id);
         assert(0);
     }
@@ -952,8 +959,8 @@ void parameter_check(const char *param, int val, int min, int max)
 {
   if(val < min || val > max)
   {
-    fprintf(stderr,"%s out of range (%d..%d) \n",param,min,max);
-    assert(0);
+    fprintf(stderr,"Error: %s out of range (%d..%d) \n",param,min,max);
+    exit(VP8ENC_FAIL);
   }
 }
 
@@ -961,12 +968,12 @@ void parameter_check_positive(const char *param, int val, int min)
 {
   if(val < 1)
   {
-    fprintf(stderr,"%s demands a positive value greater than %d \n",param,min);
-    assert(0);
+    fprintf(stderr,"Error: %s demands a positive value greater than %d \n",param,min);
+    exit(VP8ENC_FAIL);
   }
 }
 
-void parse_options(int ac,char *av[])
+int parse_options(int ac,char *av[])
 {
   int c, long_index, tmp_input;
   while (1) {
@@ -1035,12 +1042,11 @@ void parse_options(int ac,char *av[])
       case 'h':
       case 0:
       default:
-          vp8enc_show_help();
-          exit(0);
+          return PARSE_OPTIONS_FAIL;
           break;
     }
   }
-  return;
+  return PARSE_OPTIONS_OK;
 }
 
 
@@ -1053,21 +1059,27 @@ int main(int argc, char *argv[])
 
   if(argc < 5) {
       vp8enc_show_help();
-      exit(0);
+      return VP8ENC_FAIL;
+  }
+
+  if(parse_options(argc-4, &argv[4]) != PARSE_OPTIONS_OK)
+  {
+    vp8enc_show_help();
+    return VP8ENC_FAIL;
   }
 
   fp_vp8_output = fopen(argv[4],"wb");
   if(fp_vp8_output == NULL)
   {
-    fprintf(stderr,"Couldn't open output file.\n");
-    return -1;
+    fprintf(stderr,"Error: Couldn't open output file.\n");
+    return VP8ENC_FAIL;
   }
 
   fp_yuv_input = fopen(argv[3],"rb");
   if(fp_vp8_output == NULL)
   {
-    fprintf(stderr,"Couldn't open input file.\n");
-    return -1;
+    fprintf(stderr,"Error: Couldn't open input file.\n");
+    return VP8ENC_FAIL;
   }
 
   settings.width = atoi(argv[1]);
@@ -1076,11 +1088,9 @@ int main(int argc, char *argv[])
   settings.height = atoi(argv[2]);
   parameter_check("Height", settings.height, 16, MAX_XY_RESOLUTION);
 
-  parse_options(argc-4, &argv[4]);
-
   if( settings.rc_mode == VA_RC_VBR && settings.max_variable_bitrate < settings.frame_bitrate)
   {
-      fprintf(stderr,"max. variable bitrate should be grater than frame bitrate (--vbr_max >= --fb)\n");
+      fprintf(stderr,"Error: max. variable bitrate should be greater than frame bitrate (--vbr_max >= --fb)\n");
       assert(0);
   }
 
@@ -1126,4 +1136,5 @@ int main(int argc, char *argv[])
   fclose(fp_vp8_output);
   fclose(fp_yuv_input);
 
+  return VP8ENC_OK;
 }
