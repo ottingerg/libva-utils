@@ -1,5 +1,12 @@
 #!/bin/bash
 # runtests w h inputfile quantizerparameter bitrate max_vbr_bitrate outfile
+
+if [ $# -ne 7 ]
+then
+echo "Usage: $0 Width Height INPUTFILE Quantizationparameter Bitrate MaxVBRBitrate OUTFILE"
+exit -1
+fi
+
 OUTFILE=$6
 LOGFILE=log.txt
 
