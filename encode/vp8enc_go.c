@@ -1132,6 +1132,7 @@ int main(int argc, char *argv[])
   if(settings.debug)
     fprintf(stderr,"num_frames: %d\n",settings.num_frames);
 
+//TODO: Add stats
   vp8enc_init_VaapiContext();
   vp8enc_create_EncoderPipe();
 

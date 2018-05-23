@@ -7,7 +7,7 @@ echo "Usage: $0 Width Height INPUTFILE Quantizationparameter Bitrate MaxVBRBitra
 exit -1
 fi
 
-OUTFILE=$6
+OUTFILE=$7
 LOGFILE=log.txt
 
 ../vp8enc $1 $2 $3 ${OUTFILE}_cqp$4.ivf --qp $4
