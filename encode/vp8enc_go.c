@@ -97,17 +97,17 @@ static const struct option long_opts[] = {
     {"hrd_win", required_argument, NULL, 7},
     {"vbr_max", required_argument, NULL, 8},
     {"fn_num", required_argument, NULL, 9},
-    {"low_power", required_argument, NULL, 10},
-    {"temp_svc", required_argument, NULL, 11},
-    {"error_resilient", no_argument, NULL, 12},
+    {"temp_svc", required_argument, NULL, 10},
+    {"error_resilient", no_argument, NULL, 11},
+    {"debug", no_argument, NULL, 12},
     {NULL, no_argument, NULL, 0 }
 };
 
 
-static int rc_default_mode[4] = {
-    VA_RC_CQP,
-    VA_RC_CBR,
-    VA_RC_VBR,
+static const int default_rc_modes[4] = {
+    VA_RC_CQP, // 0
+    VA_RC_CBR, // 1
+    VA_RC_VBR, // 2
     VA_RC_NONE
 };
 
@@ -127,10 +127,10 @@ struct vp8enc_settings {
   int num_frames;
   VAEntrypoint vaapi_entry_point;
   int codedbuf_size;
-  int vbr_max;
   int hrd_window;
   int temporal_svc_layers;
-  uint32_t error_resilient;
+  int error_resilient;
+  int debug;
 };
 
 static struct vp8enc_settings settings =
@@ -144,11 +144,13 @@ static struct vp8enc_settings settings =
     .quantization_parameter = 60,
     .frame_bitrate = -1,
     .max_variable_bitrate = -1,
-    .error_resilient = 0,
-    .rc_mode = VA_RC_CQP,
-    .vaapi_entry_point = VAEntrypointEncSlice,
     .num_frames = 0,
+    .rc_mode = VA_RC_CQP,
+    .vaapi_entry_point = VAEntrypointEncSlice, //VAEntrypointEncSliceLP would be LowPower Mode - but not supported with VP8Encoder
+    .hrd_window = 1500,
     .temporal_svc_layers = 1,
+    .error_resilient = 0,
+    .debug = 0,
  };
 
  struct vp8enc_vaapi_context {
@@ -621,8 +623,8 @@ void vp8enc_init_MiscParameterBuffers(VAEncMiscParameterHRD *hrd, VAEncMiscParam
     rate_control->initial_qp = settings.quantization_parameter;
     if(settings.rc_mode == VA_RC_VBR)
     {
-      rate_control->bits_per_second = settings.vbr_max * 1000;
-      rate_control->target_percentage = (settings.frame_bitrate * 100) / settings.vbr_max;
+      rate_control->bits_per_second = settings.max_variable_bitrate * 1000;
+      rate_control->target_percentage = (settings.frame_bitrate * 100) / settings.max_variable_bitrate;
     } else {
       rate_control->bits_per_second = settings.frame_bitrate * 1000;
       rate_control->target_percentage = 95;
@@ -784,7 +786,8 @@ vp8enc_store_coded_buffer(FILE *vp8_fp,uint64_t timestamp)
         w_items = fwrite(coded_mem, data_length, 1, vp8_fp);
     } while (w_items != 1);
 
-    fprintf(stderr,"Bytes written %d\n",data_length); //HACK-Warning
+    if(settings.debug)
+      fprintf(stderr,"Bytes written %d\n",data_length);
 
     vaUnmapBuffer(vaapi_context.display, vaapi_context.codedbuf_buf_id);
 
@@ -940,8 +943,8 @@ void vp8enc_show_help ()
   printf("--hrd_win <num>  [1000-8000]\n");
   printf("--vbr_max <num> (kbps unit. It should be greater than fb)\n");
   printf("--fn_num <num>\n  how many frames to be encoded\n");
-  printf("--low_power <num> 0: Normal mode, 1: Low power mode, others: auto mode\n");
   printf("--temp_svc <num> number of temporal layers 2 or 3\n");
+  printf("--debug Turn debug info on\n");
   printf("--error_resilient Turn on Error resilient mode\n");
 }
 
@@ -954,10 +957,17 @@ void parameter_check(const char *param, int val, int min, int max)
   }
 }
 
+void parameter_check_positive(const char *param, int val, int min)
+{
+  if(val < 1)
+  {
+    fprintf(stderr,"%s demands a positive value greater than %d \n",param,min);
+    assert(0);
+  }
+}
+
 void parse_options(int ac,char *av[])
 {
-//Questions: Should application exit if parameter out of range are provided or adjust them to be within range?
-
   int c, long_index, tmp_input;
   while (1) {
       c = getopt_long_only(ac,av,"hf:?",long_opts,&long_index);
@@ -966,87 +976,71 @@ void parse_options(int ac,char *av[])
           break;
 
       switch(c) {
-      case 'h':
-      case 0:
-          vp8enc_show_help();
-          exit(0);
-          break;
       case 'f':
-          settings.frame_rate = atoi(optarg);
+          tmp_input = atoi(optarg);
+          parameter_check_positive("-f",tmp_input,1);
+          settings.frame_rate = tmp_input;
           break;
       case 1:
           tmp_input = atoi(optarg);
-          if (tmp_input > 3 || tmp_input < 0)
-              tmp_input = 0;
-          settings.rc_mode = rc_default_mode[tmp_input];
+          parameter_check("--rcmode", tmp_input, 0, 2);
+          settings.rc_mode = default_rc_modes[tmp_input];
           break;
       case 2:
           tmp_input = atoi(optarg);
-          if (tmp_input < 0 || tmp_input > 255)
-              tmp_input = 60;
+          parameter_check("--qb", tmp_input, 0, 255);
           settings.quantization_parameter = tmp_input;
           break;
       case 3:
           tmp_input = atoi(optarg);
-          if (tmp_input < 0)
-              tmp_input = 30;
+          parameter_check_positive("--intra_period",tmp_input,1);
           settings.intra_period = tmp_input;
           break;
       case 4:
           tmp_input = atoi(optarg);
+          parameter_check_positive("--fb",tmp_input,1);
           settings.frame_bitrate = tmp_input;
           break;
       case 6:
           tmp_input = atoi(optarg);
-          if (tmp_input < 0 || tmp_input > 63)
-              tmp_input = 10;
+          parameter_check("--lf_level",tmp_input, 0, 63);
           settings.loop_filter_level = tmp_input;
           break;
       case 7:
           tmp_input = atoi(optarg);
-          if (tmp_input > 8000 || tmp_input < 1000)
-              tmp_input = 1500;
+          parameter_check("--hrd_win",tmp_input,1000,8000);
           settings.hrd_window = tmp_input;
           break;
       case 8:
           tmp_input = atoi(optarg);
-          if (tmp_input < 0)
-              tmp_input = 20000;
-          else if (tmp_input > 100000)
-              tmp_input = 100000;
+          parameter_check_positive("--vbr_max",tmp_input,1);
           settings.max_variable_bitrate = tmp_input;
           break;
       case 9:
           tmp_input = atoi(optarg);
+          parameter_check_positive("--fn_num" ,tmp_input,1);
           settings.num_frames = tmp_input;
           break;
       case 10:
           tmp_input = atoi(optarg);
-          if (tmp_input == 1)
-            settings.vaapi_entry_point = VAEntrypointEncSliceLP;
-          else
-            settings.vaapi_entry_point = VAEntrypointEncSlice;
-          break;
-      case 11:
-          tmp_input = atoi(optarg);
-          if(tmp_input != 2 && tmp_input != 3)
-            goto error;
+          parameter_check("--temp_svc",tmp_input,2,3);
           settings.temporal_svc_layers = tmp_input;
           break;
-      case 12:
+      case 11:
           settings.error_resilient = 1;
           break;
+      case 12:
+          settings.debug = 1;
+          break;
+      case 'h':
+      case 0:
       default:
-          goto error;
+          vp8enc_show_help();
+          exit(0);
           break;
     }
   }
   return;
-
-error:
-  vp8enc_show_help();
-  exit(0);
-
 }
 
 
@@ -1077,21 +1071,26 @@ int main(int argc, char *argv[])
   }
 
   settings.width = atoi(argv[1]);
-  parameter_check("Width", settings.width, 1, MAX_XY_RESOLUTION);
+  parameter_check("Width", settings.width, 16, MAX_XY_RESOLUTION);
 
   settings.height = atoi(argv[2]);
-  parameter_check("Height", settings.height, 1, MAX_XY_RESOLUTION);
-
+  parameter_check("Height", settings.height, 16, MAX_XY_RESOLUTION);
 
   parse_options(argc-4, &argv[4]);
+
+  if( settings.rc_mode == VA_RC_VBR && settings.max_variable_bitrate < settings.frame_bitrate)
+  {
+      fprintf(stderr,"max. variable bitrate should be grater than frame bitrate (--vbr_max >= --fb)\n");
+      assert(0);
+  }
 
   settings.frame_size = settings.width * settings.height * 3 / 2; //NV12 Colorspace - For a 2x2 group of pixels, you have 4 Y samples and 1 U and 1 V sample.
   if(!settings.num_frames)
     settings.num_frames = vp8enc_get_FileSize(fp_yuv_input)/settings.frame_size;
   settings.codedbuf_size = settings.width * settings.height; //just a generous assumptions
 
-
-  fprintf(stderr,"num_frames: %d\n",settings.num_frames);
+  if(settings.debug)
+    fprintf(stderr,"num_frames: %d\n",settings.num_frames);
 
   vp8enc_init_VaapiContext();
   vp8enc_create_EncoderPipe();
