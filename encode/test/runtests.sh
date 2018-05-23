@@ -1,6 +1,6 @@
 #!/bin/bash
-# runtests w h inputfile quantizerparameter bitrate max_vbr_bitrate
-OUTFILE=test
+# runtests w h inputfile quantizerparameter bitrate max_vbr_bitrate outfile
+OUTFILE=$6
 LOGFILE=log.txt
 
 ../vp8enc $1 $2 $3 ${OUTFILE}_cqp$4.ivf --qp $4
@@ -12,7 +12,7 @@ else
   echo "PASS" >> ${LOGFILE}
 fi
 
-../vp8enc $1 $2 $3 ${OUTFILE}_cqp$4_svct3_l012.ivf --qp $4 --temp_svc 3
+../vp8enc $1 $2 $3 ${OUTFILE}_cqp$4_svct3_l012.ivf --qp $4 --temp_svc 3 --intra_period 32
 echo -n "FILE: ${OUTFILE} TEST 2 - CQP $4 SVCT 3: " >> ${LOGFILE}
 if [ $? -ne 0 ]
 then
@@ -42,7 +42,7 @@ then
 else
   echo "PASS" >> ${LOGFILE}
 fi
-../vp8enc $1 $2 $3 ${OUTFILE}_cbr$5_svct3_l012.ivf --fb $5 --rcmode 1 --temp_svc 3
+../vp8enc $1 $2 $3 ${OUTFILE}_cbr$5_svct3_l012.ivf --fb $5 --rcmode 1 --temp_svc 3 --intra_period 32
 echo -n "FILE: ${OUTFILE} TEST 5 - CBR $5 SVCT 3: " >> ${LOGFILE}
 if [ $? -ne 0 ]
 then
@@ -69,7 +69,7 @@ then
 else
   echo "PASS" >> ${LOGFILE}
 fi
-../vp8enc $1 $2 $3 ${OUTFILE}_vbr$5_$6_svct3_l012.ivf --fb $5 --vbr_max $6 --rcmode 2 --temp_svc 3
+../vp8enc $1 $2 $3 ${OUTFILE}_vbr$5_$6_svct3_l012.ivf --fb $5 --vbr_max $6 --rcmode 2 --temp_svc 3 --intra_period 32
 echo -n "FILE: ${OUTFILE} TEST 8 - VBR $5_$6 SVCT 3: " >> ${LOGFILE}
 if [ $? -ne 0 ]
 then

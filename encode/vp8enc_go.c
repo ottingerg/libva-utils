@@ -1117,6 +1117,13 @@ int main(int argc, char *argv[])
       assert(0);
   }
 
+  if( settings.temporal_svc_layers == 2 && settings.intra_period % 2)
+      fprintf(stderr,"Warning: Choose Key-Frame interval (--intra_period) to be integer mutliply of 2 to match temporal layer pattern");
+
+  if ( settings.temporal_svc_layers == 3 && settings.intra_period % 4 )
+      fprintf(stderr,"Warning: Choose Key-Frame interval (--intra_period) to be integer mutliply of 4 to match temporal layer pattern");
+
+
   settings.frame_size = settings.width * settings.height * 3 / 2; //NV12 Colorspace - For a 2x2 group of pixels, you have 4 Y samples and 1 U and 1 V sample.
   if(!settings.num_frames)
     settings.num_frames = vp8enc_get_FileSize(fp_yuv_input)/settings.frame_size;
