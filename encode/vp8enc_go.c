@@ -429,11 +429,19 @@ void vp8enc_init_PictureParameterBuffer(VAEncPictureParameterBufferVP8 *picParam
 
 }
 
-void vp8enc_set_refreshparameter_for_svct_2layers(VAEncPictureParameterBufferVP8 *picParam, int current_frame)
+void vp8enc_set_refreshparameter_for_svct_2layers(VAEncPictureParameterBufferVP8 *picParam, int current_frame, int frame_type)
 {
+  static int is_golden_refreshed = 0;
+
   //Pattern taken from libyami
 
   picParam->ref_flags.bits.no_ref_arf = 1;
+
+  if (frame_type == KEY_FRAME)
+    is_golden_refreshed = 0;
+
+  if(!is_golden_refreshed)
+    picParam->ref_flags.bits.no_ref_gf = 1;
 
   switch(current_frame % 2) {
     case 0:
@@ -445,18 +453,26 @@ void vp8enc_set_refreshparameter_for_svct_2layers(VAEncPictureParameterBufferVP8
     case 1:
       //Layer 1
       picParam->pic_flags.bits.refresh_golden_frame = 1;
+      is_golden_refreshed = 1;
       picParam->ref_flags.bits.temporal_id = 1;
       break;
   }
 }
 
-void vp8enc_set_refreshparameter_for_svct_3layers(VAEncPictureParameterBufferVP8 *picParam, int current_frame)
+void vp8enc_set_refreshparameter_for_svct_3layers(VAEncPictureParameterBufferVP8 *picParam, int current_frame,int frame_type)
 {
+  static int is_golden_refreshed = 0;
+
   //Pattern taken from libyami - Note that the alternate frame is never referenced,
   //this is because, libyami implementation suggests to be able to drop individual
   //frames from Layer 2 on bad network connections
-
   picParam->ref_flags.bits.no_ref_arf = 1;
+
+  if (frame_type == KEY_FRAME)
+    is_golden_refreshed = 0;
+
+  if(!is_golden_refreshed)
+    picParam->ref_flags.bits.no_ref_gf = 1;
 
   switch(current_frame % 4) {
     case 0:
@@ -474,9 +490,14 @@ void vp8enc_set_refreshparameter_for_svct_3layers(VAEncPictureParameterBufferVP8
     case 2:
       //Layer 1
       picParam->pic_flags.bits.refresh_golden_frame = 1;
+      is_golden_refreshed = 1;
       picParam->ref_flags.bits.temporal_id = 1;
       break;
   }
+
+  if(settings.debug)
+    fprintf(stderr,"frame: %d golden_refreshed: %d\n",current_frame,is_golden_refreshed);
+
 }
 
 void vp8enc_reset_picture_parameter_references(VAEncPictureParameterBufferVP8 *picParam)
@@ -510,39 +531,38 @@ void vp8enc_update_picture_parameter(int frame_type, int current_frame)
   } else { // INTER_FRAME
     picParam->ref_flags.bits.force_kf = 0;
     picParam->pic_flags.bits.frame_type = INTER_FRAME;
-
-    switch(settings.temporal_svc_layers)
-    {
-      case 1:
-        //Standard behavoir only 1 Temporal Layer
-        picParam->pic_flags.bits.refresh_last = 1;
-        picParam->pic_flags.bits.copy_buffer_to_golden = 1;
-        picParam->pic_flags.bits.copy_buffer_to_alternate = 2;
-        picParam->ref_flags.bits.temporal_id = 0;
-        break;
-      case 2:
-        //2 Temporal Layers
-        vp8enc_set_refreshparameter_for_svct_2layers(picParam,current_frame);
-        break;
-      case 3:
-        //3 Temporal Layers
-        vp8enc_set_refreshparameter_for_svct_3layers(picParam,current_frame);
-        break;
-      default:
-        //should never happen
-        fprintf(stderr,"Error: Only 1,2 or 3 TemporalLayers supported.\n");
-        assert(0);
-        break;
-    }
-
-    if(!picParam->ref_flags.bits.no_ref_last)
-      picParam->ref_last_frame = vaapi_context.last_ref_surface;
-    if(!picParam->ref_flags.bits.no_ref_gf)
-      picParam->ref_gf_frame = vaapi_context.golden_ref_surface;
-    if(!picParam->ref_flags.bits.no_ref_arf)
-      picParam->ref_arf_frame = vaapi_context.alt_ref_surface;
-
   }
+
+  switch(settings.temporal_svc_layers)
+  {
+    case 1:
+      //Standard behavoir only 1 Temporal Layer
+      picParam->pic_flags.bits.refresh_last = 1;
+      picParam->pic_flags.bits.copy_buffer_to_golden = 1;
+      picParam->pic_flags.bits.copy_buffer_to_alternate = 2;
+      picParam->ref_flags.bits.temporal_id = 0;
+      break;
+    case 2:
+      //2 Temporal Layers
+      vp8enc_set_refreshparameter_for_svct_2layers(picParam,current_frame,frame_type);
+      break;
+    case 3:
+      //3 Temporal Layers
+      vp8enc_set_refreshparameter_for_svct_3layers(picParam,current_frame,frame_type);
+      break;
+    default:
+      //should never happen
+      fprintf(stderr,"Error: Only 1,2 or 3 TemporalLayers supported.\n");
+      assert(0);
+      break;
+  }
+
+  if(!picParam->ref_flags.bits.no_ref_last)
+    picParam->ref_last_frame = vaapi_context.last_ref_surface;
+  if(!picParam->ref_flags.bits.no_ref_gf)
+    picParam->ref_gf_frame = vaapi_context.golden_ref_surface;
+  if(!picParam->ref_flags.bits.no_ref_arf)
+    picParam->ref_arf_frame = vaapi_context.alt_ref_surface;
 
 }
 
@@ -628,6 +648,9 @@ void vp8enc_init_MiscParameterBuffers(VAEncMiscParameterHRD *hrd, VAEncMiscParam
   {
     rate_control->window_size = settings.hrd_window;
     rate_control->initial_qp = settings.quantization_parameter;
+    rate_control->min_qp = settings.clamp_qindex_low;
+    //rate_control->rc_flags.bits.disable_bit_stuffing = 1;
+
     if(settings.rc_mode == VA_RC_VBR)
     {
       rate_control->bits_per_second = settings.max_variable_bitrate * 1000;
