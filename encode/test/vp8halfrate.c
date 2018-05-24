@@ -27,6 +27,7 @@ void main()
   struct ivf_header ivf;
   struct frame_header frame;
   char frame_buffer[1000000];
+  uint64_t timestamp;
   int skip;
 
   fprintf(stderr,"sizeof frame_header: %ld sizeof ivf header %ld\n",sizeof(struct frame_header),sizeof(struct ivf_header));
@@ -47,6 +48,7 @@ void main()
 
   fwrite(&ivf, sizeof(struct ivf_header),1,stdout);
 
+  timestamp = 0;
   skip = 0;
   while(fread(&frame,sizeof(struct frame_header),1,stdin) == 1)
   {
@@ -54,7 +56,7 @@ void main()
     fread(&frame_buffer, frame.frame_size,1,stdin);
     if(!skip)
     {
-      frame.timestamp /= 2;
+      frame.timestamp = timestamp++; //rewrite timestamp
       fprintf(stderr,"Timestamp: %ld File pos: %lx\n",frame.timestamp, ftell(stdout));
       fwrite(&frame, sizeof(struct frame_header), 1, stdout);
       fwrite(&frame_buffer, frame.frame_size, 1, stdout );
