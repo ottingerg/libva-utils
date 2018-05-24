@@ -1078,6 +1078,8 @@ int main(int argc, char *argv[])
   int current_frame, frame_type;
   FILE *fp_vp8_output, *fp_yuv_input;
   uint64_t timestamp;
+  clock_t clock_start, clock_stop;
+  double fps, elapsed_time;
 
 
   if(argc < 5) {
@@ -1129,10 +1131,10 @@ int main(int argc, char *argv[])
     settings.num_frames = vp8enc_get_FileSize(fp_yuv_input)/settings.frame_size;
   settings.codedbuf_size = settings.width * settings.height; //just a generous assumptions
 
-  if(settings.debug)
-    fprintf(stderr,"num_frames: %d\n",settings.num_frames);
+  fprintf(stderr,"Info: Encoding total of %d frames.\n",settings.num_frames);
 
-//TODO: Add stats
+  clock_start = clock(); //Measure Runtime
+
   vp8enc_init_VaapiContext();
   vp8enc_create_EncoderPipe();
 
@@ -1142,6 +1144,8 @@ int main(int argc, char *argv[])
   timestamp = 0;
   while (current_frame < settings.num_frames)
   {
+    fprintf(stderr,"\rProcessing frame: %d",current_frame);
+
     if ( (current_frame%settings.intra_period) == 0)
       frame_type = KEY_FRAME;
     else
@@ -1166,6 +1170,12 @@ int main(int argc, char *argv[])
   vp8enc_destory_EncoderPipe();
   fclose(fp_vp8_output);
   fclose(fp_yuv_input);
+
+  clock_stop = clock();
+  elapsed_time = (double)(clock_stop-clock_start)/CLOCKS_PER_SEC;
+  fps = (double)current_frame/elapsed_time;
+
+  fprintf(stderr, "\nProcessed %d frames in %.0f ms (%.2f FPS)\n",current_frame,elapsed_time*1000.0,fps);
 
   return VP8ENC_OK;
 }
