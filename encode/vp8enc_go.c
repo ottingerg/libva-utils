@@ -824,7 +824,7 @@ vp8enc_store_coded_buffer(FILE *vp8_fp,uint64_t timestamp)
     return 0;
 }
 
-int vp8enc_get_FileSize(FILE *fp)
+size_t vp8enc_get_FileSize(FILE *fp)
 {
   struct stat st;
   fstat(fileno(fp), &st);
@@ -1128,7 +1128,7 @@ int main(int argc, char *argv[])
 
   settings.frame_size = settings.width * settings.height * 3 / 2; //NV12 Colorspace - For a 2x2 group of pixels, you have 4 Y samples and 1 U and 1 V sample.
   if(!settings.num_frames)
-    settings.num_frames = vp8enc_get_FileSize(fp_yuv_input)/settings.frame_size;
+    settings.num_frames = vp8enc_get_FileSize(fp_yuv_input)/(size_t)settings.frame_size;
   settings.codedbuf_size = settings.width * settings.height; //just a generous assumptions
 
   fprintf(stderr,"Info: Encoding total of %d frames.\n",settings.num_frames);
