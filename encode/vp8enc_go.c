@@ -1171,7 +1171,7 @@ int main(int argc, char *argv[])
   fclose(fp_yuv_input);
 
   gettimeofday(&t2,0);
-  elapsed_time = ((double)t2.tv_sec-(double)t1.tv_sec)+((double)t2.tv_usec-(double)t1.tv_usec)/1000000.0;
+  elapsed_time = (double)(t2.tv_sec-t1.tv_sec)+(double)(t2.tv_usec-t1.tv_usec)/1000000.0;
   fps = (double)current_frame/elapsed_time;
 
   fprintf(stderr, "\nProcessed %d frames in %.0f ms (%.2f FPS)\n",current_frame,elapsed_time*1000.0,fps);
