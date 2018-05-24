@@ -73,7 +73,7 @@ vp9enc_LDADD       = \
 vp8enc_qnd_SOURCES     = vp8enc_qnd.c
 vp8enc_qnd_CFLAGS      = -I$(top_srcdir)/common -g
 vp8enc_qnd_LDADD       = \
-	$(LIBVA_LIBS) \
+	-lpthread $(LIBVA_LIBS) \
 	$(top_builddir)/common/libva-display.la \
 	-lpthread -lm
 
