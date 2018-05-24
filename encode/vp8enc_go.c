@@ -1072,13 +1072,12 @@ int parse_options(int ac,char *av[])
   return PARSE_OPTIONS_OK;
 }
 
-
 int main(int argc, char *argv[])
 {
   int current_frame, frame_type;
   FILE *fp_vp8_output, *fp_yuv_input;
   uint64_t timestamp;
-  clock_t clock_start, clock_stop;
+  struct timeval t1,t2;
   double fps, elapsed_time;
 
 
@@ -1133,7 +1132,7 @@ int main(int argc, char *argv[])
 
   fprintf(stderr,"Info: Encoding total of %d frames.\n",settings.num_frames);
 
-  clock_start = clock(); //Measure Runtime
+  gettimeofday(&t1,0); //Measure Runtime
 
   vp8enc_init_VaapiContext();
   vp8enc_create_EncoderPipe();
@@ -1171,8 +1170,8 @@ int main(int argc, char *argv[])
   fclose(fp_vp8_output);
   fclose(fp_yuv_input);
 
-  clock_stop = clock();
-  elapsed_time = (double)(clock_stop-clock_start)/CLOCKS_PER_SEC;
+  gettimeofday(&t2,0);
+  elapsed_time = ((double)t2.tv_sec-(double)t1.tv_sec)+((double)t2.tv_usec-(double)t1.tv_usec)/1000000.0;
   fps = (double)current_frame/elapsed_time;
 
   fprintf(stderr, "\nProcessed %d frames in %.0f ms (%.2f FPS)\n",current_frame,elapsed_time*1000.0,fps);
