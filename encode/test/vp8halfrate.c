@@ -33,8 +33,11 @@ void main()
   fread(&ivf, sizeof(struct ivf_header),1,stdin);
   fprintf(stderr,"num frames: %d\n",ivf.num_frames);
   fprintf(stderr,"frame_rate: %d, time_scale: %d\n", ivf.frame_rate, ivf.time_scale);
-  //ivf.frame_rate /= 2;
-  ivf.time_scale *= 2;
+  if(ivf.frame_rate % 2 == 0) {
+    ivf.frame_rate /= 2;
+  } else {
+    ivf.time_scale *= 2;
+  }
   ivf.num_frames /= 2;
 
 #ifdef VLC_PLAYER_HACK //VLC doens't accept fractional timebase 
