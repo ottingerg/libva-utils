@@ -468,6 +468,7 @@ void vp8enc_set_refreshparameter_for_svct_3layers(VAEncPictureParameterBufferVP8
   //frames from Layer 2 on bad network connections
   picParam->ref_flags.bits.no_ref_arf = 1;
 
+
   if (frame_type == KEY_FRAME)
     is_golden_refreshed = 0;
 
@@ -1092,25 +1093,25 @@ int main(int argc, char *argv[])
     return VP8ENC_FAIL;
   }
 
+  settings.width = atoi(argv[1]);
+  parameter_check("Width", settings.width, 16, MAX_XY_RESOLUTION);
+
+  settings.height = atoi(argv[2]);
+  parameter_check("Height", settings.height, 16, MAX_XY_RESOLUTION);
+
+  fp_yuv_input = fopen(argv[3],"rb");
+  if(fp_yuv_input == NULL)
+  {
+    fprintf(stderr,"Error: Couldn't open input file.\n");
+    return VP8ENC_FAIL;
+  }
+
   fp_vp8_output = fopen(argv[4],"wb");
   if(fp_vp8_output == NULL)
   {
     fprintf(stderr,"Error: Couldn't open output file.\n");
     return VP8ENC_FAIL;
   }
-
-  fp_yuv_input = fopen(argv[3],"rb");
-  if(fp_vp8_output == NULL)
-  {
-    fprintf(stderr,"Error: Couldn't open input file.\n");
-    return VP8ENC_FAIL;
-  }
-
-  settings.width = atoi(argv[1]);
-  parameter_check("Width", settings.width, 16, MAX_XY_RESOLUTION);
-
-  settings.height = atoi(argv[2]);
-  parameter_check("Height", settings.height, 16, MAX_XY_RESOLUTION);
 
   if( settings.rc_mode == VA_RC_VBR && settings.max_variable_bitrate < settings.frame_bitrate)
   {
