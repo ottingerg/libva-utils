@@ -104,9 +104,9 @@ static const struct option long_opts[] = {
     {"hrd_win", required_argument, NULL, 7},
     {"vbr_max", required_argument, NULL, 8},
     {"fn_num", required_argument, NULL, 9},
-    {"temp_svc", required_argument, NULL, 10},
-    {"error_resilient", no_argument, NULL, 11},
-    {"debug", no_argument, NULL, 12},
+    {"error_resilient", no_argument, NULL, 10},
+    {"debug", no_argument, NULL, 11},
+    {"temp_svc", required_argument, NULL, 12},
     {NULL, no_argument, NULL, 0 }
 };
 
@@ -135,10 +135,11 @@ struct vp8enc_settings {
   VAEntrypoint vaapi_entry_point;
   int codedbuf_size;
   int hrd_window;
-  int temporal_svc_layers;
   int error_resilient;
   int debug;
+  int temporal_svc_layers;
 };
+
 
 static struct vp8enc_settings settings =
   {
@@ -974,9 +975,9 @@ void vp8enc_show_help ()
   printf("--hrd_win <num>  [1000-8000]\n");
   printf("--vbr_max <num> (kbps unit. It should be greater than fb)\n");
   printf("--fn_num <num>\n  how many frames to be encoded\n");
-  printf("--temp_svc <num> number of temporal layers 2 or 3\n");
-  printf("--debug Turn debug info on\n");
   printf("--error_resilient Turn on Error resilient mode\n");
+  printf("--debug Turn debug info on\n");
+  printf("--temp_svc <num> number of temporal layers 2 or 3\n");
 }
 
 void parameter_check(const char *param, int val, int min, int max)
@@ -1053,15 +1054,15 @@ int parse_options(int ac,char *av[])
           settings.num_frames = tmp_input;
           break;
       case 10:
+          settings.error_resilient = 1;
+          break;
+      case 11:
+          settings.debug = 1;
+          break;
+      case 12:
           tmp_input = atoi(optarg);
           parameter_check("--temp_svc",tmp_input,2,3);
           settings.temporal_svc_layers = tmp_input;
-          break;
-      case 11:
-          settings.error_resilient = 1;
-          break;
-      case 12:
-          settings.debug = 1;
           break;
       case 'h':
       case 0:
