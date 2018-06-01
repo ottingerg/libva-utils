@@ -156,9 +156,9 @@ static struct vp8enc_settings settings =
     .rc_mode = VA_RC_CQP,
     .vaapi_entry_point = VAEntrypointEncSlice, //VAEntrypointEncSliceLP would be LowPower Mode - but not supported with VP8Encoder
     .hrd_window = 1500,
-    .temporal_svc_layers = 1,
     .error_resilient = 0,
     .debug = 0,
+    .temporal_svc_layers = 1,
  };
 
  struct vp8enc_vaapi_context {
