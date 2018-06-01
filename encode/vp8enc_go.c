@@ -496,10 +496,6 @@ void vp8enc_set_refreshparameter_for_svct_3layers(VAEncPictureParameterBufferVP8
       picParam->ref_flags.bits.temporal_id = 1;
       break;
   }
-
-  if(settings.debug)
-    fprintf(stderr,"frame: %d golden_refreshed: %d\n",current_frame,is_golden_refreshed);
-
 }
 
 void vp8enc_reset_picture_parameter_references(VAEncPictureParameterBufferVP8 *picParam)
@@ -819,7 +815,7 @@ vp8enc_store_coded_buffer(FILE *vp8_fp,uint64_t timestamp)
     } while (w_items != 1);
 
     if(settings.debug)
-      fprintf(stderr,"Bytes written %d\n",data_length);
+      fprintf(stderr,"Timestamp: %ld Bytes written %d\n",timestamp,data_length);
 
     vaUnmapBuffer(vaapi_context.display, vaapi_context.codedbuf_buf_id);
 
