@@ -60,7 +60,7 @@ struct str_frame_header {
 
 struct str_obu_header {
   unsigned int  forbidden_bit : 1;
-  unsigned int   type : 4;
+  unsigned int  type : 4;
   unsigned int  extention_flag : 1;
   unsigned int  has_size_field : 1;
   unsigned int  reserved_1bit : 1;
@@ -73,6 +73,42 @@ struct str_obu_extention_header {
 } __attribute__((packed));
 
 
+bool read_bool(FILE *fp, bool pos_reset)
+{
+  static unsigned char cur_byte;
+  static int bits_left = 0;
+  bool cur_bit;
+
+  if(!bits_left || pos_reset)
+  {
+    fread(&cur_byte, 1,1,fp);
+    printf("--> byte fetched\n");
+    bits_left = 8;
+  }
+
+  if(cur_byte & 0x80)
+    cur_bit = 1;
+  else
+    cur_bit = 0;
+  bits_left --;
+  cur_byte <<= 1;
+
+  return cur_bit;
+}
+
+int read_nliteral(FILE *fp, int nbits, bool pos_reset)
+{
+  int lit = 0;
+
+  for(int i = 0; i < nbits; i++)
+  {
+    lit <<= 1;
+    lit |= read_bool(fp,pos_reset);
+    pos_reset = 0;
+  }
+
+  return lit;
+}
 
 int read_leb128(FILE *fp, int *value) {
  char leb128_byte;
@@ -95,17 +131,27 @@ int read_open_bitstream_unit(FILE *fp) {
   struct str_obu_extention_header obu_extention_header;
   int byte_read = 0;
   int obu_size;
+  unsigned char byte;
 
-  byte_read += fread(&obu_header,1,1,fp);
+  obu_header.forbidden_bit = read_bool(fp,1);
+  obu_header.type = read_nliteral(fp,4,0);
+  obu_header.extention_flag = read_bool(fp,0);
+  obu_header.has_size_field = read_bool(fp,0);
+  obu_header.reserved_1bit = read_bool(fp,0);
+  byte_read++;
+
   printf("-------------------- OBU --------------------\n");
   printf("ForbiddenBit:\t%d\n",obu_header.forbidden_bit);
-  printf("Type:\t\t%d\n",obu_header.type);
+  printf("Type:\t\t%s\n",text_obu_type[obu_header.type]);
   printf("ExtentionFlag:\t%d\n",obu_header.extention_flag);
   printf("HasSizeField:\t%d\n",obu_header.has_size_field);
 
   if(obu_header.extention_flag)
   {
-    byte_read += fread(&obu_extention_header,1,1,fp);
+    obu_extention_header.temporal_id = read_nliteral(fp,3,1);
+    obu_extention_header.temporal_id = read_nliteral(fp,2,0);
+    byte_read++;
+
     printf("TemporalID:\t%d\n",obu_extention_header.temporal_id);
     printf("SpatialID:\t%d\n",obu_extention_header.spatial_id);
   }
@@ -114,7 +160,11 @@ int read_open_bitstream_unit(FILE *fp) {
   {
     byte_read += read_leb128(fp,&obu_size);
     printf("Size:\t\t%d\n",obu_size);
-    fseek(stdin,obu_size - byte_read, SEEK_CUR);
+    if(obu_size) {
+      printf("seek: %d\n",obu_size - byte_read);
+      fseek(stdin,obu_size - byte_read, SEEK_CUR);
+      byte_read = obu_size;
+    }
   }
 
   return byte_read;
@@ -157,7 +207,10 @@ void main()
     print_ivf_frame_header(frame_header);
     obus_size = 0;
     while(frame_header.frame_size > obus_size)
+    {
       obus_size += read_open_bitstream_unit(stdin);
+      printf("obus_size: %d\n",obus_size);
+    }
     //fseek(stdin,frame_header.frame_size-obus_size, SEEK_CUR);
   }
 }
