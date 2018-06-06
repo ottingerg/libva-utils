@@ -161,9 +161,9 @@ int read_open_bitstream_unit(FILE *fp) {
     byte_read += read_leb128(fp,&obu_size);
     printf("Size:\t\t%d\n",obu_size);
     if(obu_size) {
-      printf("seek: %d\n",obu_size - byte_read);
-      fseek(stdin,obu_size - byte_read, SEEK_CUR);
-      byte_read = obu_size;
+      printf("seek: %d\n",obu_size);
+      fseek(stdin,obu_size, SEEK_CUR);
+      byte_read += obu_size;
     }
   }
 
