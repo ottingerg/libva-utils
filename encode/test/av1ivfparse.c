@@ -72,6 +72,54 @@ struct str_obu_extention_header {
   unsigned int   extension_header_reserved_3bits : 3;
 } __attribute__((packed));
 
+#define SELECT_SCREEN_CONTENT_TOOLS 2
+#define SELECT_INTEGER_MV 2
+
+#define MAX_I 32
+struct str_sequence_header_obu {
+  unsigned int seq_profile : 3;
+  unsigned int still_picture : 1;
+  unsigned int reduced_still_picture_header : 1;
+  unsigned int seq_level_idx[MAX_I]; // : 5;
+  unsigned int operating_points_cnt_minus_1 : 1;
+  unsigned int opterating_point_idc[MAX_I]; //: 12;
+  unsigned int seq_tier[MAX_I]; // : 1;
+  unsigned int frame_width_bits_minus_1 : 4;
+  unsigned int frame_height_bits_minus_1 : 4;
+  unsigned int max_frame_width_minus_1 : 16;
+  unsigned int max_frame_height_minus_1 : 16;
+  unsigned int frame_id_number_present_flag : 1;
+  unsigned int delta_frame_id_length_minus_2 : 4;
+  unsigned int additional_frame_id_length_minus_1 : 3;
+  unsigned int use_128x128_superblock : 1;
+  unsigned int enable_filter_intra : 1;
+  unsigned int enable_intra_edge_filter : 1;
+  unsigned int enable_interintra_compound : 1;
+  unsigned int enable_masked_compound : 1;
+  unsigned int enable_warped_motion : 1;
+  unsigned int enable_dual_filter : 1;
+  unsigned int enable_order_hint : 1;
+  unsigned int enable_jnt_comp : 1;
+  unsigned int enable_ref_frame_mvs : 1;
+  unsigned int seq_choose_screen_content_tools : 2;
+  unsigned int seq_force_screen_content_tools : 2;
+  unsigned int seq_choose_integer_mv : 1;
+  unsigned int seq_force_integer_mv : 1;
+  unsigned int order_hint_bits_minus_1 : 3;
+  unsigned int enable_superres : 1;
+  unsigned int enable_cdef : 1;
+  unsigned int enable_restoration : 1;
+  unsigned int timing_info_present_flag : 1;
+  unsigned int decoder_model_info_present_flag : 1;
+  unsigned int operating_points_decoder_model_present : 1;
+  unsigned int operating_points_decoder_model_count_minus_1 : 5;
+  unsigned int decoder_model_operating_point_idc[MAX_I]; // : 12;
+  unsigned int display_model_param_present_flag : 1;
+  unsigned int initial_display_delay_minus_1 : 4;
+  unsigned int decoder_model_param_present_flag : 1;
+  unsigned int film_grain_params_present : 1;
+};
+
 
 bool read_bool(FILE *fp, bool pos_reset)
 {
@@ -126,9 +174,152 @@ int read_leb128(FILE *fp, int *value) {
  return byte_read;
 }
 
+int read_sequence_header_obu(FILE *fp, struct str_sequence_header_obu *seq_header)
+{
+  int byte_read = 0;
+
+  seq_header->seq_profile = read_nliteral(fp,3,0);
+  seq_header->still_picture = read_bool(fp,0);
+  seq_header->reduced_still_picture_header = read_bool(fp,0);
+
+  if(seq_header->reduced_still_picture_header) {
+    seq_header->operating_points_cnt_minus_1 = 0;
+    seq_header->opterating_point_idc[0] = 0;
+    seq_header->seq_level_idx[0] = read_nliteral(fp,5,0);
+    seq_header->seq_tier[0] = 0;
+  } else {
+    seq_header->operating_points_cnt_minus_1 = read_nliteral(fp,5,0);
+    for( int i = 0; i <= seq_header->operating_points_cnt_minus_1; i++) {
+      seq_header->opterating_point_idc[i] = read_nliteral(fp,12,0);
+      seq_header->seq_level_idx[i] = read_nliteral(fp,5,0);
+      if (seq_header->seq_level_idx[i] > 7 ) {
+        seq_header->seq_tier[i] = read_bool(fp,0);
+      } else  {
+        seq_header->seq_tier[i] = 0;
+      }
+
+    }
+  }
+  //operatingPoint = choose_operating_point( )
+  //OperatingPointIdc = operating_point_idc[ operatingPoint ]
+
+  seq_header->frame_width_bits_minus_1 = read_nliteral(fp,4,0);
+  seq_header->frame_height_bits_minus_1 = read_nliteral(fp,4,0);
+  seq_header->max_frame_width_minus_1 = read_nliteral(fp,seq_header->frame_width_bits_minus_1+1,0);
+  seq_header->max_frame_height_minus_1 = read_nliteral(fp,seq_header->frame_height_bits_minus_1+1,0);
+
+  if(seq_header->reduced_still_picture_header) {
+    seq_header->frame_id_number_present_flag = 0;
+  } else {
+    seq_header->frame_id_number_present_flag = 1;
+  }
+
+  if(seq_header->frame_id_number_present_flag)
+  {
+    seq_header->delta_frame_id_length_minus_2 = read_nliteral(fp,4,0);
+    seq_header->additional_frame_id_length_minus_1 = read_nliteral(fp,3,0);
+  }
+
+  seq_header->use_128x128_superblock = read_bool(fp,0);
+  seq_header->enable_filter_intra = read_bool(fp,0);
+  seq_header->enable_intra_edge_filter = read_bool(fp,0);
+
+  if (seq_header->reduced_still_picture_header) {
+    seq_header->enable_interintra_compound = 0;
+    seq_header->enable_masked_compound = 0;
+    seq_header->enable_warped_motion = 0;
+    seq_header->enable_dual_filter = 0;
+    seq_header->enable_order_hint = 0;
+    seq_header->enable_jnt_comp = 0;
+    seq_header->enable_ref_frame_mvs = 0;
+    seq_header->seq_force_screen_content_tools = SELECT_SCREEN_CONTENT_TOOLS;
+    seq_header->seq_force_integer_mv = SELECT_INTEGER_MV;
+    //OrderHintBits = 0
+  } else {
+    seq_header->enable_interintra_compound = read_bool(fp,0);
+    seq_header->enable_masked_compound = read_bool(fp,0);
+    seq_header->enable_warped_motion = read_bool(fp,0);
+    seq_header->enable_dual_filter = read_bool(fp,0);
+    seq_header->enable_order_hint = read_bool(fp,0);
+    if(seq_header->enable_order_hint) {
+      seq_header->enable_jnt_comp = read_bool(fp,0);
+      seq_header->enable_ref_frame_mvs = read_bool(fp,0);
+    } else {
+      seq_header->enable_jnt_comp = 0;
+      seq_header->enable_ref_frame_mvs = 0;
+    }
+    seq_header->seq_choose_screen_content_tools = read_bool(fp,0);
+    if (seq_header->seq_choose_screen_content_tools) {
+      seq_header->seq_force_screen_content_tools = SELECT_SCREEN_CONTENT_TOOLS;
+    } else {
+      seq_header->seq_force_screen_content_tools = read_bool(fp,0);
+    }
+    if ( seq_header->seq_force_screen_content_tools > 0 ) {
+      seq_header->seq_choose_integer_mv = read_bool(fp,0);
+      if (seq_header->seq_choose_integer_mv) {
+        seq_header->seq_force_integer_mv = SELECT_INTEGER_MV;
+      } else {
+        seq_header->seq_force_integer_mv = read_bool(fp,0);
+      }
+    } else {
+      seq_header->seq_force_integer_mv = SELECT_INTEGER_MV;
+    }
+    if ( seq_header->enable_order_hint ) {
+      seq_header->order_hint_bits_minus_1 = read_nliteral(fp,3,0);
+      //OrderHintBits = order_hint_bits_minus_1 + 1
+    } else {
+      //OrderHintBits = 0
+    }
+  }
+
+  seq_header->enable_superres = read_bool(fp,0);
+  seq_header->enable_cdef = read_bool(fp,0);
+  seq_header->enable_restoration = read_bool(fp,0);
+  //color_config()
+
+  if(seq_header->reduced_still_picture_header) {
+    seq_header->timing_info_present_flag = 0;
+  } else {
+    seq_header->timing_info_present_flag = read_bool(fp,0);
+  }
+  if(seq_header->timing_info_present_flag) {
+    //timing_info();
+    seq_header->decoder_model_info_present_flag = read_bool(fp,0);
+    if(seq_header->decoder_model_info_present_flag) {
+      //deocder_model_info()
+    }
+  } else {
+    seq_header->decoder_model_info_present_flag = 0;
+  }
+
+  seq_header->operating_points_decoder_model_present = read_bool(fp,0);
+  if(seq_header->operating_points_decoder_model_present) {
+    seq_header->operating_points_decoder_model_count_minus_1 = read_nliteral(fp,5,0);
+    for(int opNum = 0; opNum <= seq_header->operating_points_decoder_model_count_minus_1; opNum++) {
+      seq_header->decoder_model_operating_point_idc[opNum] = read_nliteral(fp,12,0);
+      seq_header->display_model_param_present_flag = read_bool(fp,0); //strange because named and overwritten for each iteration
+      if(seq_header->display_model_param_present_flag) {
+        seq_header->initial_display_delay_minus_1 = read_nliteral(fp,4,0);
+      }
+      if(seq_header->decoder_model_info_present_flag) {
+        seq_header->decoder_model_param_present_flag = read_bool(fp,0);
+        if (seq_header->decoder_model_param_present_flag) {
+          //operating_parameters_info()
+        }
+      }
+    }
+  } else {
+    seq_header->operating_points_decoder_model_count_minus_1 = -1;
+  }
+  seq_header->film_grain_params_present = read_bool(fp,0);
+
+}
+
 int read_open_bitstream_unit(FILE *fp) {
   struct str_obu_header obu_header;
   struct str_obu_extention_header obu_extention_header;
+  struct str_sequence_header_obu seq_header;
+
   int byte_read = 0;
   int obu_size;
   unsigned char byte;
@@ -161,11 +352,20 @@ int read_open_bitstream_unit(FILE *fp) {
     byte_read += read_leb128(fp,&obu_size);
     printf("Size:\t\t%d\n",obu_size);
     if(obu_size) {
-      printf("seek: %d\n",obu_size);
-      fseek(stdin,obu_size, SEEK_CUR);
       byte_read += obu_size;
     }
   }
+
+  switch(obu_header.type) {
+    case OBU_SEQUENCE_HEADER:
+      read_sequence_header_obu(fp,&seq_header);
+      break;
+    default:
+      if(obu_size)
+        fseek(stdin,obu_size, SEEK_CUR);
+      break;
+  }
+
 
   return byte_read;
 }
