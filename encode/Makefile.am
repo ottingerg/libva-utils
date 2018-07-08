@@ -7,11 +7,11 @@
 # distribute, sub license, and/or sell copies of the Software, and to
 # permit persons to whom the Software is furnished to do so, subject to
 # the following conditions:
-# 
+#
 # The above copyright notice and this permission notice (including the
 # next paragraph) shall be included in all copies or substantial portions
 # of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 # OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
 # MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
@@ -20,7 +20,7 @@
 # TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-bin_PROGRAMS = avcenc mpeg2vaenc h264encode jpegenc vp9enc vp8enc_qnd vp8enc_go
+bin_PROGRAMS = avcenc mpeg2vaenc h264encode jpegenc vp9enc vp9enc_svct vp8enc_qnd vp8enc_go
 noinst_PROGRAMS = svctenc
 
 AM_CPPFLAGS = \
@@ -66,6 +66,13 @@ svctenc_LDADD		= \
 vp9enc_SOURCES     = vp9enc.c
 vp9enc_CFLAGS      = -I$(top_srcdir)/common -g
 vp9enc_LDADD       = \
+	$(LIBVA_LIBS) \
+	$(top_builddir)/common/libva-display.la \
+	-lpthread -lm
+
+vp9enc_svct_SOURCES     = vp9enc_svct.c
+vp9enc_svct_CFLAGS      = -I$(top_srcdir)/common -g
+vp9enc_svct_LDADD       = \
 	$(LIBVA_LIBS) \
 	$(top_builddir)/common/libva-display.la \
 	-lpthread -lm
