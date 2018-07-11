@@ -749,12 +749,20 @@ vp9enc_release_encode_resource()
 static int
 vp9enc_get_free_slot()
 {
-    int i, index = -1;
-
+    int i, j, index = -1;
+    int used;
+    
     for (i = 0; i < SURFACE_NUM; i++) {
-        if (use_slot[i] == 0) {
-            index = i;
-            break;
+        used = 0;
+        for( j = 0; j < SURFACE_NUM;j++) {
+            if( vp9_ref_list[j] == ref_surfaces[i]) {
+              used = 1;
+              break;
+            }
+        }
+        if(!used) {
+          index = i;
+          break;
         }
     }
 
@@ -763,52 +771,44 @@ vp9enc_get_free_slot()
         index = SURFACE_NUM - 1;
     }
 
+    printf("Using free Slot: %d\n",index);
     return index;
 }
 
 static void
-vp9enc_update_reference_list(void)
+vp9enc_update_reference_list(char update_flags)
 {
-    VASurfaceID last_surf;
-    int last_slot;
     int i;
 
     /* Todo: Add the full support of reference frames */
 
+    printf("Current Slot: %d\n", current_slot);
+    printf("----before update----\n");
+    for(i = 0; i < SURFACE_NUM;i++)
+    {
+      printf("Ref %d: %08X\n",i,vp9_ref_list[i]);
+
+    }
+
     if (current_frame_type == KEY_FRAME) {
-        memset(use_slot, 0, sizeof(use_slot));
-        use_slot[current_slot] = 1;
-        for (i = 0; i < SURFACE_NUM; i++)
-            vp9_ref_list[i] = ref_surfaces[current_slot];
+        vp9_ref_list[0] = ref_surfaces[current_slot];
+        for (i = 1; i < SURFACE_NUM; i++)
+            vp9_ref_list[i] = 0;
 
         return;
-    }
+   } else {
+     for(i = 0; i < 3; i++) {
+       if( update_flags & (1<<i)) {
+         vp9_ref_list[i] = ref_surfaces[current_slot];
+       }
+     }
+   }
 
-    last_slot = -1;
-    use_slot[current_slot] = 1;
-    last_surf = vp9_ref_list[0];
+    printf("----after update----\n");
+    for(i = 0; i < SURFACE_NUM;i++)
+    {
+      printf("Ref %d: %08X\n",i,vp9_ref_list[i]);
 
-    vp9_ref_list[0] = ref_surfaces[current_slot];
-
-    for (i = 0; i < SURFACE_NUM; i++) {
-        if (ref_surfaces[i] == last_surf) {
-            last_slot = i;
-            break;
-        }
-    }
-
-    if (last_slot != -1) {
-        int used_flag = 0;
-
-        for (i = 1; i < SURFACE_NUM;i++) {
-            if (vp9_ref_list[i] == last_surf) {
-                used_flag = 1;
-                break;
-            }
-        }
-
-        if (!used_flag)
-            use_slot[last_slot] = 0;
     }
 }
 
@@ -1280,7 +1280,7 @@ vp9enc_encode_picture(FILE *yuv_fp, FILE *vp9_fp,
         ret = vp9enc_store_coded_buffer(vp9_fp, current_frame_type);
     } while (ret);
 
-    vp9enc_update_reference_list();
+    vp9enc_update_reference_list(vp9enc_context.pic_param.refresh_frame_flags);
 
     vp9enc_end_picture();
 }

@@ -763,6 +763,7 @@ vp9enc_get_free_slot()
         index = SURFACE_NUM - 1;
     }
 
+    printf("Using free Slot: %d\n",index);
     return index;
 }
 
@@ -774,6 +775,12 @@ vp9enc_update_reference_list(void)
     int i;
 
     /* Todo: Add the full support of reference frames */
+    printf("----before update----\n");
+    for(i = 0; i < SURFACE_NUM;i++)
+    {
+      printf("Ref %d: %08X\n",i,vp9_ref_list[i]);
+
+    }
 
     if (current_frame_type == KEY_FRAME) {
         memset(use_slot, 0, sizeof(use_slot));
@@ -789,6 +796,7 @@ vp9enc_update_reference_list(void)
     last_surf = vp9_ref_list[0];
 
     vp9_ref_list[0] = ref_surfaces[current_slot];
+    printf("Current Slot: %d\n", current_slot);
 
     for (i = 0; i < SURFACE_NUM; i++) {
         if (ref_surfaces[i] == last_surf) {
@@ -809,6 +817,13 @@ vp9enc_update_reference_list(void)
 
         if (!used_flag)
             use_slot[last_slot] = 0;
+    }
+
+    printf("----after update----\n");
+    for(i = 0; i < SURFACE_NUM;i++)
+    {
+      printf("Ref %d: %08X\n",i,vp9_ref_list[i]);
+
     }
 }
 
