@@ -826,6 +826,9 @@ void vp9enc_set_refreshparameter_for_svct_2layers(VAEncPictureParameterBufferVP9
   //Pattern taken from libyami
 
   pic_param->ref_flags.bits.ref_frame_ctrl_l0 = 1;
+  if(*is_golden_refreshed && (current_frame % 2) != 0)
+    pic_param->ref_flags.bits.ref_frame_ctrl_l0 |= 0x2;
+
 
   switch(current_frame % 2) {
     case 0:
@@ -839,8 +842,6 @@ void vp9enc_set_refreshparameter_for_svct_2layers(VAEncPictureParameterBufferVP9
       break;
   }
 
-  if(is_golden_refreshed)
-    pic_param->ref_flags.bits.ref_frame_ctrl_l0 |= 0x2;
 }
 
 static
@@ -851,6 +852,8 @@ void vp9enc_set_refreshparameter_for_svct_3layers(VAEncPictureParameterBufferVP9
   //frames from Layer 2 on bad network connections
 
   pic_param->ref_flags.bits.ref_frame_ctrl_l0 = 1;
+  if(*is_golden_refreshed && (current_frame % 4) != 0)
+    pic_param->ref_flags.bits.ref_frame_ctrl_l0 |= 0x2;
 
   switch(current_frame % 4) {
     case 0:
@@ -865,11 +868,10 @@ void vp9enc_set_refreshparameter_for_svct_3layers(VAEncPictureParameterBufferVP9
     case 2:
       //Layer 1
       pic_param->refresh_frame_flags = 0x02;
+      *is_golden_refreshed = 1;
       break;
   }
 
-  if(is_golden_refreshed)
-    pic_param->ref_flags.bits.ref_frame_ctrl_l0 |= 0x2;
 }
 
 
