@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #define VLC_PLAYER_HACK
 
@@ -26,9 +27,12 @@ void main()
 {
   struct ivf_header ivf;
   struct frame_header frame;
-  char frame_buffer[1000000];
+  char *frame_buffer;
+  size_t fb_size = 1000000;
   uint64_t timestamp;
   int skip;
+
+  frame_buffer = malloc(fb_size);
 
   fprintf(stderr,"sizeof frame_header: %ld sizeof ivf header %ld\n",sizeof(struct frame_header),sizeof(struct ivf_header));
   fread(&ivf, sizeof(struct ivf_header),1,stdin);
@@ -52,18 +56,26 @@ void main()
   skip = 0;
   while(fread(&frame,sizeof(struct frame_header),1,stdin) == 1)
   {
+    if(fb_size < frame.frame_size)
+    {
+      fb_size = frame.frame_size;
+      frame_buffer = realloc(frame_buffer, fb_size);
+    }
+
     //fprintf(stderr,"frame size: %d\n",frame.frame_size);
-    fread(&frame_buffer, frame.frame_size,1,stdin);
+    fread(frame_buffer, frame.frame_size,1,stdin);
     if(!skip)
     {
       frame.timestamp = timestamp++; //rewrite timestamp
       fprintf(stderr,"Timestamp: %ld File pos: %lx\n",frame.timestamp, ftell(stdout));
       fwrite(&frame, sizeof(struct frame_header), 1, stdout);
-      fwrite(&frame_buffer, frame.frame_size, 1, stdout );
+      fwrite(frame_buffer, frame.frame_size, 1, stdout );
       skip = 1;
     } else {
       skip = 0;
     }
 
   }
+  free(frame_buffer);
 }
+
